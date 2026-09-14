@@ -4,7 +4,8 @@
 >
 > 背景阅读：[为什么AI只会说正确的废话，以及怎么把它逼出舒适区](https://yage.ai/context-infrastructure.html)
 
-这是一个运行了一年的 context infrastructure 系统的完整结构。主要价值是作为 reference implementation，让你看到系统长什么样、数据如何流动、记忆如何积累。
+这是基于原作者 reference implementation 改造的个人 brain 仓库：
+为 Copilot 提供跨项目规则、按需工作流、事务化记忆采集和 Windows 后台整理。
 
 **核心定位**：这不是开箱即用的工具，而是一个可以参考的蓝图。Clone 下来后，你可以立刻体验「有 context vs 没有 context」的差异。但要让 AI 真正变成你自己的，需要从头采集你的行为数据——没有捷径。
 
@@ -12,13 +13,16 @@
 
 ## Quick Start（5 分钟）
 
-```bash
-git clone https://github.com/grapeot/context-infrastructure
-cd context-infrastructure
-# 用 Claude Code / OpenCode / Cursor 打开这个目录
+```powershell
+git clone https://github.com/zhitaoChen/context-infrastructure
+Set-Location context-infrastructure
+.\integrations\copilot\install.ps1
 ```
 
-然后：打开 [`rules/USER.md`](rules/USER.md)，填写你的基本信息。这是 ROI 最高的一步，完成后 AI 的行为立刻个性化。
+公开用户模板是 [`rules/USER.md`](rules/USER.md)，个人配置留在被 Git 忽略的 `rules/USER.local.md`。
+Copilot CLI 通过用户级
+`~/.copilot/copilot-instructions.md` 自动定位本仓库，再按 [`AGENTS.md`](AGENTS.md)
+执行 lazy loading。
 
 详细步骤见 [`setup_guide.md`](setup_guide.md)。
 
@@ -35,7 +39,7 @@ context-infrastructure/
 ├── .env.example                 # 环境变量模板
 │
 ├── docs/
-│   ├── CRONTAB.md               # 定时任务配置指南（时间线 + 示例 crontab）
+│   ├── CRONTAB.md               # Copilot 自动记忆计划
 │   └── SKILL_ECOSYSTEM.md       # 可单独安装的 public skill repo 目录
 │
 ├── rules/
@@ -48,27 +52,33 @@ context-infrastructure/
 │
 ├── contexts/
 │   ├── memory/
-│   │   └── OBSERVATIONS.md      # 三层记忆系统的 L1/L2 层
+│   │   ├── INBOX.md             # 采集规范入口
+│   │   ├── OBSERVATIONS.md      # 检索规范入口
+│   │   └── .local/              # 本机数据库、视图、日志、审阅稿（Git 忽略）
 │   ├── survey_sessions/         # 调研报告存放目录
 │   ├── daily_records/           # 日常记录存放目录
 │   └── thought_review/          # 思考复盘存放目录
 │
 ├── periodic_jobs/
 │   └── ai_heartbeat/
-│       ├── docs/
-│       │   ├── PRD.md           # 记忆系统设计文档
-│       │   └── KNOWLEDGE_BASE.md # 观察和反思的 SOP
-│       └── src/v0/
-│           ├── observer.py      # 每日观察脚本（需配置 cron）
-│           └── reflector.py     # 每周反思脚本（需配置 cron）
+│       ├── install.ps1          # Windows 计划任务安装器
+│       ├── run.ps1              # 非交互执行入口
+│       ├── prompts/             # Copilot observer / reflector
+│       ├── docs/                # 记忆系统设计与 SOP
+│       └── archive/             # OpenCode legacy 与外部 jobs
 │
 ├── tools/
-│   └── share_report/            # 报告发布（Tier 2）
+│   ├── brain/                   # 事务记忆 CLI 和测试
+│   ├── semantic_search/          # 暂缓启用的旧本地实现
+│   └── archive/                  # 未启用的外部集成
 │
+├── integrations/copilot/        # 原生 skill 与全局入口安装器
 └── adhoc_jobs/                  # 按需任务存放目录
 ```
 
-> 语义搜索已升级为独立 public skill repo：[semantic-search-skill](https://github.com/grapeot/semantic-search-skill)，不再放在 `tools/` 下。
+> 正式启用语义搜索时使用独立 public repo
+> [semantic-search-skill](https://github.com/grapeot/semantic-search-skill)；`tools/semantic_search/`
+> 仅保留为暂缓处理的旧实现。
 
 ---
 
@@ -76,7 +86,11 @@ context-infrastructure/
 
 **展示层（可以参考，不能复制）**：[`rules/axioms/`](rules/axioms/) 和 [`rules/skills/`](rules/skills/) 包含了这个系统积累一年的内容。43 条公理是从具体经历中蒸馏出来的，skills 是从真实项目中总结的。这些代表原作者的视角，对你有参考价值，但不能替代你自己积累的认知。
 
-**可复用层（直接用）**：[`rules/SOUL.md`](rules/SOUL.md)、[`rules/USER.md`](rules/USER.md) 是模板，填写即可使用。[`rules/COMMUNICATION.md`](rules/COMMUNICATION.md) 是通用的沟通风格指南，大多数人可以直接采用。[`periodic_jobs/ai_heartbeat/`](periodic_jobs/ai_heartbeat/) 提供了记忆系统的实现代码。需要配置定时任务时，参考 [`docs/CRONTAB.md`](docs/CRONTAB.md)。
+**当前 active 层**：[`rules/SOUL.md`](rules/SOUL.md)、[`rules/USER.md`](rules/USER.md)、
+[`rules/COMMUNICATION.md`](rules/COMMUNICATION.md) 和两个索引组成常驻入口。具体 skills
+与 axioms 按任务 lazy load。自动记忆由 Windows Task Scheduler 启动受限 Copilot，
+每周只输出人工审阅提案，配置见
+[`docs/CRONTAB.md`](docs/CRONTAB.md)；不相关能力保存在 archive，不参与默认加载。
 
 **不可复用层**：公理的具体内容、skill 背后的具体经验。理解它们的结构和形成方式，然后从你自己的数据中积累。
 

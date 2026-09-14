@@ -1,20 +1,15 @@
-# Workflow Watchdog - 后台任务巡检
+# 后台任务健康检查
 
-## 适用场景
+用于定位长任务停滞、异常退出和无效重试。默认依赖运行时完成通知，
+不要为每个后台 Agent 额外创建轮询 schedule。
 
-派出长时间运行的 workflow、后台 agent 或批量 sub-agent 任务之后。这类子进程偶尔会"鬼打墙"：卡在某个循环或重试里，长时间不产出结果。不要在原地死等。
+- 有 agent_id/shellId 时沿用该 ID，不重新发现或启动同目标任务。
+- 对无通知机制的外部服务，检查新日志、产物时间、退出码和阶段检查点；
+  仅 CPU 活跃或 PID 存在不能证明任务有进展。
+- 不凭“很久没输出”直接 kill。先排除正常长计算，确认停止不会破坏输出。
+- 确需停止时只操作该任务的确切 ID，先保存可用检查点，再采用有界重试。
+- 恢复方法见 [长任务恢复](./workflow_long_task_recovery.md)，持久调度见
+  [延时执行](./delayed_execution.md)。
 
-## 做法
-
-派出任务后，设一个 reasonable 的巡检 wake-up，默认约 30 分钟（1800s）。Claude Code harness 用 `ScheduleWakeup`；其他 harness 用对应的定时机制（如 Process Launcher 的延时执行，见 `rules/skills/process_launcher.md`）。
-
-醒来后检查任务状态，分两种情况处理：
-
-1. **真实在忙**：有新输出、agent 在持续产出。不管它，继续等或再设一次 wake-up。
-2. **鬼打墙卡住**：长时间无进展、同一步骤反复重试。把它 kill 掉（Claude Code 用 `TaskStop`），用已有的部分结果推进，或换方法重做。
-
-"真忙 vs 卡住"的判断自己做，不用问用户。这和 `rules/SOUL.md` 的自主执行契约一致：巡检和 kill 属于技术编排决策，自己推到底。
-
-## 来源
-
-实践反馈：跑 workflow 时子进程卡住，AI 死等浪费了整段时间。教训是把"派出后设巡检"变成默认动作，而非出问题后的补救。
+记忆后台用 `python <brain-root>\tools\brain\memory.py status` 查看最后运行状态；
+失败返回非零，详细记录在本地数据库和 `.local` 日志，不靠最后一句自然语言判断成功。

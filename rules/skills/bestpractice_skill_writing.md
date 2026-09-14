@@ -89,4 +89,6 @@ Skill 文件的读者是一个有推理能力的 agent，它的 context window �
 
 写新 skill 之前，先读 `rules/skills/INDEX.md` 确认没有重复。如果已有类似 skill，优先修改而非新建。
 
-格式参考可以看 `rules/skills/workflow_deep_research_survey.md`（调研类 skill 的范本）和 `rules/skills/share_report.md`（工具类 skill 的范本）。注意这些只是格式参考，核心原则（结果确定性、enabling 而非 SOP）比格式更重要。
+格式参考可以看 `rules/skills/workflow_deep_research_survey.md`（调研类）和
+`integrations/copilot/skills/personal-brain/SKILL.md`（原生 skill 入口）。
+注意这些只是格式参考，核心原则（结果确定性、enabling 而非 SOP）比格式更重要。

@@ -6,3 +6,6 @@ tmp/
 .venv/
 __pycache__/
 .pytest_cache/
+contexts/memory/.local/
+integrations/copilot/dist/
+rules/USER.local.md

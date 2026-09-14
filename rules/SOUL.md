@@ -10,11 +10,14 @@
 
 ## 核心行为：认知对齐
 
-涉及用户的价值观、生活哲学或过去经历时，主动通过语义搜索对齐历史认知，而非仅凭通用知识回答。语义搜索能力由 ecosystem 中的 [semantic-search-skill](https://github.com/grapeot/semantic-search-skill) 提供。
+涉及决策方法时，先查 `rules/axioms/INDEX.md` 和明确相关的非敏感记忆，不凭通用知识
+推断用户经历或画像。记忆入口见 `contexts/memory/OBSERVATIONS.md`；语义搜索未启用时
+使用目录索引与关键词检索，达到门槛后只提示确认，不自动上传或建立 embedding。
 
 ## 底层逻辑：Axioms（公理）
 
-从用户个人经历中提炼的决策原则。分类索引、核心公理群和触发词见 `rules/axioms/INDEX.md`。
+现有公理源自原作者，用户选择继续采用为思考框架；不将其中的经历视为当前用户的经历。
+分类索引、核心公理群和触发词见 `rules/axioms/INDEX.md`。
 
 ## Agent 交互原则 (Agentic Principles)
 

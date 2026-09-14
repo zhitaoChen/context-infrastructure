@@ -1,186 +1,64 @@
-# Setup Guide: Context Infrastructure
+# Setup Guide
 
-这是 AI 引导的配置指南。按步骤操作，每步完成后立刻能感受到差异。
+本仓库提供 Copilot 跨项目 brain、一个原生路由 skill 和 Windows 后台记忆整理器。
+只启用通用方法；股票交易、跨境电商专属流程需要真实业务目标和验收标准，尚未内置。
 
----
+## 本机入口
 
-## Step 1：填写身份文件（必填，5 分钟）
+- `AGENTS.md`：常驻规则和 lazy-loading 边界。
+- `rules/USER.md`：公开模板；本机配置在被 Git 忽略的 `rules/USER.local.md`。
+- `rules/skills/INDEX.md`：参考工作流索引，命中后再读具体文件。
+- `integrations/copilot/skills/personal-brain/SKILL.md`：唯一原生 brain skill。
+- `contexts/memory/INBOX.md`：事务采集方法，不是可追加的数据文件。
 
-**价值**：完成这一步，AI 的行为立刻个性化。这是 ROI 最高的一步。
+## 新机器安装
 
-### 1a. 填写 USER.md
-
-打开 `rules/USER.md`，用自己的信息替换模板内容。
-
-至少填写这几项：
-- **称呼**：你希望 AI 怎么叫你
-- **时区**：避免时间混乱
-- **背景**：你是谁、你做什么
-- **技术兴趣**：越具体越好
-- **会让你烦的**：帮 AI 避开你讨厌的沟通方式
-
-**验证**：填好后，在 AI 对话里问「介绍一下你对我的了解」，看 AI 是否能准确描述你。
-
-### 1b. 自定义 SOUL.md（可选但推荐）
-
-打开 `rules/SOUL.md`，调整 AI 的核心行为基调。
-
-默认内容已经是通用的良好基础（直接、有观点、不说废话）。如果你有特殊需求，在「氛围」和「核心真理」部分添加你的偏好。
-
----
-
-## Step 2：探索和扩展 Skills（推荐，15 分钟）
-
-**价值**：理解 skill 的格式，开始积累自己的可复用工作流。
-
-### 2a. 浏览现有 Skills
-
-打开 `rules/skills/INDEX.md`，快速扫描已有的 skill 分类：
-
-- **BestPractice 类**：立刻可用，与你的工具和项目无关
-- **Workflow 类**：调研、幻灯片制作、认知画像提取等，需要理解后适配
-- **API Guide 类**：⚙️ 标记的需要配置，✅ 标记的可直接用
-
-### 2b. 创建你的第一个 Skill
-
-找一件你经常做的事（调用某个 API、处理某类数据、执行某个工作流），用以下格式创建 `rules/skills/<category>_<name>.md`：
-
-```markdown
-# Skill: 名称
-
-## When to Use
-什么情况下触发这个 skill
-
-## Prerequisites
-需要什么工具/配置
-
-## 步骤
-1. 步骤一
-2. 步骤二
-
-## 示例
-具体的命令或代码
+```powershell
+.\integrations\copilot\install.ps1 -WhatIf
+.\integrations\copilot\install.ps1
+copilot instruction list --json
+copilot skill list --json
 ```
 
-将新 skill 添加到 `rules/skills/INDEX.md` 对应分类。
+安装器将 skill 源目录注册到 Copilot，并在用户级 instructions 中维护一个带标记的
+bootstrap；保留其他用户指令，不复制全套文档。仓库移动后重新安装并清理旧注册路径。
+Git clone 本身不会安装全局入口或系统任务。
 
-### 2c. 安装外部 public skill repo
+新会话自动发现入口；现有会话可 `/skills reload`。
+跨仓库首次访问仍可能需要 `/add-dir <brain-root>` 或启动时
+`copilot --add-dir <brain-root>`。不能把自动发现与授权访问混为一谈。
+本机入口不会自动同步到其他机器、VS Code 扩展或 Copilot cloud agent。
 
-`rules/skills/` 里的内容是 starter set，不需要把所有能力都复制进来。需要更完整的能力时，先看 [`docs/SKILL_ECOSYSTEM.md`](docs/SKILL_ECOSYSTEM.md)。那里列出了一组独立维护的 public skill repo，例如 Tavily、Google Docs、Google Maps、Outlook、Resend、OpenCode、Process Launcher、PPTX、Typefully 和 Stripe。
+## 后台记忆
 
-安装时，把目标 repo URL 交给你的 AI agent，让它从当前 workspace 的 `AGENTS.md` / `WORKSPACE.md` 出发，只暴露一个 root skill。通用技术 contract 留在 public repo；联系人 alias、本地路径、endpoint、token 和业务上下文留在本地 overlay。
+从另一个仓库也可执行：
 
-### 2d. 关于 Axioms（公理）
-
-`rules/axioms/` 包含 43 条从真实经历中蒸馏的决策原则。这些代表原作者的视角和认知模式，对你有**参考价值**，但不能替代你自己的公理。
-
-建议：
-- 先浏览 `rules/axioms/INDEX.md` 了解分类和核心含义
-- 遇到共鸣的公理，标注下来
-- 未来从你自己的项目经历中积累你的公理（参考同类格式）
-
----
-
-## Step 3：配置记忆系统（可选，30 分钟）
-
-**价值**：让 AI 自动积累你的工作经验，越用越懂你。
-
-### 3a. 理解三层架构
-
-```
-L3（全局约束）: rules/ 下所有文件 → 每次 session 被动加载
-L1/L2（动态记忆）: contexts/memory/OBSERVATIONS.md → agent 主动检索
+```powershell
+python <brain-root>\tools\brain\memory.py status
 ```
 
-L3 你已经配置好了（Step 1）。L1/L2 需要设置 cron 自动运行。
+采集由 Agent 在重要任务后主动调用 CLI；没有强制 session-end hook，不 dump 对话，
+也不能保证每个会话都提交记录。仅接收非敏感的工程方法与工作流偏好。
+实际数据、日志、审阅稿在 `.local`，不提交到 Git。
 
-### 3b. 配置 OpenCode Server
+Windows 计划任务安装、运行身份和故障处理见 [自动记忆计划](docs/CRONTAB.md)：
+每日 00:00 分类；周日 23:30 生成建议；只在用户确认后才改 rules。
+Windows 保持登录时，锁屏或关闭聊天都不影响；注销/关机后不运行，恢复后尝试补跑。
 
-`periodic_jobs/ai_heartbeat/` 的脚本依赖 OpenCode Server API。
+Core 不需要 `.env` 或额外 API key；后台模型仍需要 Copilot 授权和可用网络。
+语义搜索暂不启用，达到文档门槛只提示。
 
-1. 确认本地 OpenCode Server 运行（或配置连接）
-2. 在 `periodic_jobs/ai_heartbeat/src/v0/` 检查 `opencode_client.py`（需要你自行补充，源码参考 OpenCode 文档）
-3. 测试连通性：`python3 observer.py --help`
+## 长任务与归档
 
-### 3c. 配置 Cron
+长任务检查点保存在目标项目获准的本地目录，规范见
+[长任务恢复](rules/skills/workflow_long_task_recovery.md)。这是可恢复性，不是保证永不丢上下文。
 
-```bash
-# 每日 8:00 AM 运行 observer（扫描当日变化）
-0 8 * * * cd /path/to/your/workspace && python3 periodic_jobs/ai_heartbeat/src/v0/observer.py >> /tmp/observer.log 2>&1
+Apple/iOS、媒体、营销、邮件、发布及旧 OpenCode 代码已归档，不参与索引匹配。
+外部 writing-skill 等迁移链接不等于安装完成；需要时确认依赖再安装。
+恢复 archive 前修正移动后的相对路径、imports、平台与凭据配置。
 
-# 每周一 9:00 AM 运行 reflector（蒸馏和晋升）
-0 9 * * 1 cd /path/to/your/workspace && python3 periodic_jobs/ai_heartbeat/src/v0/reflector.py >> /tmp/reflector.log 2>&1
+## 本地验证
+
+```powershell
+python -m unittest discover -s tools\brain\tests -v
 ```
-
-调整路径和时间为你的实际情况。
-
-### 3d. 验证
-
-运行一次 observer：
-
-```bash
-python3 periodic_jobs/ai_heartbeat/src/v0/observer.py 2024-01-15
-```
-
-查看 `contexts/memory/OBSERVATIONS.md` 是否有新条目写入。
-
----
-
-## Step 4：扩展 Tier 2 组件（按需，30-60 分钟）
-
-以下组件独立工作，按需配置，不配不影响核心功能。
-
-### 语义搜索（⚙️）
-
-当你的 `contexts/` 目录积累了足够多内容后，语义搜索让你能按意思而非关键词检索历史记录。
-
-**需要**：任意 OpenAI-compatible embedding endpoint（本地或云端）
-**配置**：安装 ecosystem [semantic-search-skill](https://github.com/grapeot/semantic-search-skill)
-
-### 分享报告到 Web（⚙️）
-
-将调研报告转为 HTML 并发布到你自己的服务器。
-
-**需要**：一台有 SSH 访问权限的服务器
-**配置**：参见 `rules/skills/share_report.md`，替换 `<your-domain>` 和 `<your-server>`
-
-### 发送邮件通知（⚙️）
-
-让 AI 完成任务后发邮件通知你。
-
-**需要**：Gmail App Password
-**配置**：参见 `rules/skills/send_email.md`
-
----
-
-## 何时你会感受到系统的价值
-
-**填好 USER.md 后（立刻）**：AI 的回答更有针对性，不再是泛化的通用答复。
-
-**使用 2-3 周后**：`contexts/` 目录里开始积累你的工作记录，AI 可以引用上下文。
-
-**运行 1-2 个月记忆系统后**：observer 开始识别你的工作模式，reflector 把高价值经验晋升为 skill 或 axiom。
-
-**积累 6+ 个月后**：系统开始真正了解你的判断逻辑和决策模式，你会发现 AI 给出的建议越来越接近你自己会做的决定。
-
----
-
-## 常见问题
-
-**Q：axioms 能直接用吗？**
-A：可以用来理解系统的结构，但核心内容代表原作者的视角。你的 axioms 需要从你自己的经历中提炼。参考 `rules/skills/workflow_cognitive_profile_extraction.md` 了解提炼方法。
-
-**Q：skills 能直接用吗？**
-A：✅ 标记的可以直接用。⚙️ 标记的需要替换配置（endpoint、API key、域名等）。BestPractice 类基本都可以直接用。更完整的工具型能力放在独立 public repo 里，见 [`docs/SKILL_ECOSYSTEM.md`](docs/SKILL_ECOSYSTEM.md)。
-
-**Q：observer.py 需要什么依赖？**
-A：依赖 `opencode_client.py`（OpenCode Server 的客户端封装）。这部分需要你根据自己使用的 AI agent 框架来实现或适配。
-
-**Q：能用其他 AI agent（不用 OpenCode）吗？**
-A：可以。`observer.py` 的核心逻辑是构造 prompt 并调用 AI；你可以替换 `opencode_client` 为 Claude API、OpenAI API 或任何支持长对话的 AI 接口。
-
----
-
-## 下一步
-
-系统搭好后，真正的积累才刚开始。关键是持续使用：把你的工作放在这个 workspace 里，让 AI 参与每天的工作。随着时间推移，系统会越来越懂你。
