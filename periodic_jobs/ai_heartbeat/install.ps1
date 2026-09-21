@@ -36,15 +36,16 @@ $config | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $local '
 if ($LASTEXITCODE -ne 0) { throw 'Memory storage initialization failed.' }
 $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) `
     -LogonType Interactive -RunLevel Limited
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
-    -ExecutionTimeLimit (New-TimeSpan -Seconds ($TimeoutSeconds + 120)) `
-    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 $triggers = @(
     (New-ScheduledTaskTrigger -Daily -At '00:00'),
     (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At '23:30')
 )
 for ($i = 0; $i -lt $names.Count; $i++) {
     $kind = @('daily', 'weekly')[$i]
+    $modelCalls = if ($kind -eq 'daily') { 2 } else { 1 }
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Seconds ($modelCalls * $TimeoutSeconds + 120)) `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
     $arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -File "{0}" -Kind {1}' -f `
         (Join-Path $PSScriptRoot 'run.ps1'), $kind
     $action = New-ScheduledTaskAction -Execute $pwsh -Argument $arguments -WorkingDirectory $root

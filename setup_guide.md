@@ -37,12 +37,15 @@ Git clone 本身不会安装全局入口或系统任务。
 python <brain-root>\tools\brain\memory.py status
 ```
 
-采集由 Agent 在重要任务后主动调用 CLI；没有强制 session-end hook，不 dump 对话，
-也不能保证每个会话都提交记录。仅接收非敏感的工程方法与工作流偏好。
-实际数据、日志、审阅稿在 `.local`，不提交到 Git。
+采集有两个入口：Agent 主动提交已验证方法；或用户确认范围并启用 Observer 后，
+由定时器只读扫描本地 Copilot 历史、筛选独立工作流请求，再自动提炼非敏感方法。
+Observer 复用现有 Copilot；疑似敏感、代码/链接等内容保留给本地交互审阅。
+没有强制 session-end hook，不 dump 完整对话，不把助手或工具输出交给后台模型。
+历史引用与长期记忆分开计数，未提炼的引用不会成为 daily 的模型输入。
+实际数据、连接配置、日志、审阅稿在 `.local`，不提交到 Git。
 
 Windows 计划任务安装、运行身份和故障处理见 [自动记忆计划](docs/CRONTAB.md)：
-每日 00:00 分类；周日 23:30 生成建议；只在用户确认后才改 rules。
+每日 00:00 提炼并分类；周日 23:30 生成完整草稿；只在用户确认后才改 rules。
 Windows 保持登录时，锁屏或关闭聊天都不影响；注销/关机后不运行，恢复后尝试补跑。
 
 Core 不需要 `.env` 或额外 API key；后台模型仍需要 Copilot 授权和可用网络。

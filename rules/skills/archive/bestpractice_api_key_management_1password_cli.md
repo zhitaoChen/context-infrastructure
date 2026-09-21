@@ -10,6 +10,8 @@ updated: 2026-02-13
 
 # API Key 管理与调用最佳实践（1Password CLI）
 
+> 已归档，不属于启用的 brain skills，不自动加载或执行。
+
 本文总结本地开发与生产环境中，如何使用 1Password CLI（`op`）安全管理并注入 API Key，避免明文泄漏与长期驻留风险。
 
 ## 1. 核心原则
@@ -85,7 +87,7 @@ vault 固定 `dev`，item 固定 `dev-api-keys`。推断新 service 的 1Passwor
 
 | 类型 | 模式 | 示例 |
 |---|---|---|
-| API key（最常见） | `<service>_api_key` | `ollama_api_key`、`typefully_api_key`、`koyeb_api_key` |
+| API key（最常见） | `<service>_api_key` | `typefully_api_key`、`koyeb_api_key` |
 | Token | `<service>_<descriptor>_token` | `circle_api_v2_token`、`ai_builder_space_token`、`data_for_seo_token` |
 | 应用专用密码 | `<service>_app_password` | `gmail_skill_app_password` |
 | Webhook 签名密钥 | `<service>_<use>_signing_secret` | `resend_webhook_signing_secret` |
@@ -99,7 +101,7 @@ vault 固定 `dev`，item 固定 `dev-api-keys`。推断新 service 的 1Passwor
 1. 确定 service 名（typefully、kimi、deepseek…），snake_case。
 2. 加对应类型后缀（默认 `_api_key`）。
 3. 拼成 `op://dev/dev-api-keys/<field>`。
-4. 如果不确定 field 是否存在，先列出现有 field 确认：`op item get dev-api-keys --vault dev --format json` 后检查 `fields[*].label`。避免因拼写（如 `olama` vs `ollama`）静默失败。
+4. 如果不确定 field 是否存在，先列出现有 field 确认：`op item get dev-api-keys --vault dev --format json` 后检查 `fields[*].label`。避免因服务名或字段后缀拼写错误而静默失败。
 
 ## 7. 代码中调用 API Key
 

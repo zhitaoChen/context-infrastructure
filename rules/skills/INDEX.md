@@ -32,9 +32,7 @@
 | 股票 consensus net income、盈利预期口径核验 | [共识净利润审计](./workflow_public_consensus_net_income_audit.md) |
 | 论文分析、研究解读 | [论文调研写作](./workflow_research_paper_survey_writing.md) |
 | arXiv 下载和格式转换 | [论文转换](./bestpractice_academic_paper_conversion.md) |
-| OpenReview 论文元数据 | [OpenReview](./openreview.md) |
 | 最新政策/数字/事实时效性 | [时间敏感信息验证](./bestpractice_temporal_info_verification.md) |
-| PDF 转 Markdown | [PDF 转换](./bestpractice_pdf_to_markdown.md) |
 | Markdown 转 HTML | [HTML 转换](./bestpractice_markdown_html_conversion.md) |
 | 内部文档版式 | [内部视觉规范](./bestpractice_internal_visuals.md) |
 | 经验沉淀、知识迭代 | [知识飞轮](./workflow_knowledge_flywheel.md) |
@@ -49,8 +47,6 @@
   不把生成的个人画像自动采入长期记忆，不假定存在 Opus 或外部发布工具。
 - [会话归档指南](./ai_session_search_archive.md)：外部 exporter 尚未安装，当前不 dump 会话。
   Copilot 自身会话查询优先使用当前运行时提供的历史检索。
-- [1Password API Key 管理](./bestpractice_api_key_management_1password_cli.md)：仅当项目已采用
-  1Password 时使用；不强制迁移现有凭据，不索取或回显密钥。
 - [Koyeb 部署](./deployment_github_actions_koyeb.md)：需要对应项目和账号，发布需授权。
 - 语义搜索：暂不启用；本地文档计数达到 100 时提示，关键词连续召回失败也可提前提示。
   启用前确认数据范围、embedding 服务及成本；不自动上传。

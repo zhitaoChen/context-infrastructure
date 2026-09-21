@@ -1,5 +1,7 @@
 # Skill: OpenReview API
 
+> 已归档，不属于启用的 brain skills，不自动加载或执行。
+
 查询 AI 学术会议的论文 metadata 和作者 profile。覆盖 ICLR、NeurIPS、ICML 等 OpenReview 托管会议。
 
 ## When to Use

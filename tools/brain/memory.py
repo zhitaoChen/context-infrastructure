@@ -30,11 +30,11 @@ def now():
     return datetime.now(CST).isoformat(timespec="seconds")
 
 
-def clean_text(value, name, maximum=800):
+def clean_text(value, name, maximum=800, multiline=False):
     if not isinstance(value, str) or not value.strip() or len(value) > maximum:
         raise ValueError(f"{name} must be a nonempty string of at most {maximum} characters")
     value = value.strip()
-    if any(ord(c) < 32 for c in value) or SECRET.search(value):
+    if any(ord(c) < 32 and not (multiline and c == "\n") for c in value) or SECRET.search(value):
         raise ValueError(f"{name} contains control characters or possible credentials")
     return value
 
@@ -42,6 +42,15 @@ def clean_text(value, name, maximum=800):
 def exact_keys(value, keys):
     if not isinstance(value, dict) or set(value) != set(keys):
         raise ValueError(f"Expected exactly these fields: {', '.join(keys)}")
+
+
+def prepare_record(record):
+    exact_keys(record, ["source", "observation", "evidence", "non_sensitive", "durable"])
+    if record["non_sensitive"] is not True or record["durable"] is not True:
+        raise ValueError("Capture requires explicit non_sensitive=true and durable=true")
+    fields = {k: clean_text(record[k], k) for k in ("source", "observation", "evidence")}
+    key = hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
+    return key, fields
 
 
 def atomic_write(path, text):
@@ -111,6 +120,26 @@ class Store:
                     id TEXT PRIMARY KEY, kind TEXT NOT NULL, started TEXT NOT NULL,
                     finished TEXT, state TEXT NOT NULL, detail TEXT NOT NULL DEFAULT ''
                 );
+                CREATE TABLE IF NOT EXISTS review_inputs (
+                    review_id TEXT NOT NULL, candidate_id TEXT NOT NULL,
+                    PRIMARY KEY(review_id,candidate_id)
+                );
+                CREATE TABLE IF NOT EXISTS history_cursors (
+                    scan_key TEXT PRIMARY KEY, last_turn_id INTEGER NOT NULL,
+                    high_watermark INTEGER NOT NULL DEFAULT 0,
+                    updated TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS history_queue (
+                    id TEXT PRIMARY KEY, origin TEXT NOT NULL,
+                    session_id TEXT NOT NULL, turn_index INTEGER NOT NULL,
+                    turn_time TEXT NOT NULL, content_digest TEXT NOT NULL,
+                    state TEXT NOT NULL DEFAULT 'pending',
+                    candidate_ids TEXT NOT NULL DEFAULT '[]',
+                    reason TEXT NOT NULL DEFAULT '', created TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS history_turn
+                    ON history_queue(origin,session_id,turn_index);
+                CREATE INDEX IF NOT EXISTS history_state ON history_queue(state);
             """)
             db.execute("BEGIN IMMEDIATE")
             columns = {r["name"] for r in db.execute("PRAGMA table_info(reviews)")}
@@ -118,6 +147,9 @@ class Store:
                 db.execute("ALTER TABLE reviews ADD COLUMN state TEXT NOT NULL DEFAULT 'pending'")
             if "note" not in columns:
                 db.execute("ALTER TABLE reviews ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+            history_columns = {r["name"] for r in db.execute("PRAGMA table_info(history_cursors)")}
+            if "high_watermark" not in history_columns:
+                db.execute("ALTER TABLE history_cursors ADD COLUMN high_watermark INTEGER NOT NULL DEFAULT 0")
 
     @contextmanager
     def connection(self):
@@ -136,11 +168,7 @@ class Store:
             )]
 
     def capture(self, record):
-        exact_keys(record, ["source", "observation", "evidence", "non_sensitive", "durable"])
-        if record["non_sensitive"] is not True or record["durable"] is not True:
-            raise ValueError("Capture requires explicit non_sensitive=true and durable=true")
-        fields = {k: clean_text(record[k], k) for k in ("source", "observation", "evidence")}
-        key = hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
+        key, fields = prepare_record(record)
         with self.connection() as db:
             inserted = db.execute(
                 "INSERT OR IGNORE INTO candidates(id,created,source,observation,evidence)"
@@ -168,6 +196,28 @@ class Store:
                         f"Evidence: {row['evidence']}", "",
                     ]
                 atomic_write(self.local / filename, "\n".join(lines) + "\n")
+            pending_history = db.execute(
+                "SELECT count(*) FROM history_queue WHERE state='pending'"
+            ).fetchone()[0]
+            held_history = db.execute(
+                "SELECT count(*) FROM history_queue WHERE state='needs_review'"
+            ).fetchone()[0]
+            lines = [
+                "# History references awaiting interactive distillation", "",
+                "Generated reference-only view. No conversation text is copied here.",
+                f"Pending: {pending_history}. Showing at most 100; use history.py list for more.",
+                f"Held for local review: {held_history}; use history.py list --state needs_review.",
+                "Read contexts/memory/INBOX.md before reviewing. References are not memories.", "",
+            ]
+            for row in db.execute(
+                "SELECT id,session_id,turn_index,turn_time FROM history_queue"
+                " WHERE state='pending' ORDER BY turn_time,session_id,turn_index,id LIMIT 100"
+            ):
+                lines.append(
+                    f"- {row['id']} | session={row['session_id']} | "
+                    f"turn={row['turn_index']} | {row['turn_time']}"
+                )
+            atomic_write(self.local / "HISTORY_QUEUE.md", "\n".join(lines) + "\n")
             for row in db.execute("SELECT * FROM reviews ORDER BY created,id"):
                 payload = json.loads(row["payload"])
                 lines = ["# Rule promotion proposals", "", f"Status: {row['state']}",
@@ -195,7 +245,18 @@ class Store:
             pending = [r["id"] for r in db.execute(
                 "SELECT id,payload FROM reviews WHERE state='pending' ORDER BY created,id"
             ) if json.loads(r["payload"])["proposals"]]
+            history_counts = {r["state"]: r["n"] for r in db.execute(
+                "SELECT state,count(*) n FROM history_queue GROUP BY state"
+            )}
+            unreviewed = db.execute(
+                "SELECT count(*) FROM candidates c WHERE state='accepted'"
+                " AND NOT EXISTS (SELECT 1 FROM review_inputs i WHERE i.candidate_id=c.id)"
+            ).fetchone()[0]
         return {"counts": counts, "review_batches": reviews, "pending_reviews": pending, "recent_runs": runs,
+                "unreviewed_observations": unreviewed,
+                "history": {"configured": (self.local / "history.json").is_file(),
+                            "counts": history_counts,
+                            "observer_configured": (self.local / "observer.json").is_file()},
                 "semantic_search": semantic_status(self.root)}
 
     def resolve_review(self, key, state, note, confirmed):
@@ -259,7 +320,7 @@ def weekly_proposals(payload, rows):
     for item in payload["proposals"]:
         exact_keys(item, ["title", "category", "proposal", "ids"])
         clean_text(item["title"], "title", 120)
-        clean_text(item["proposal"], "proposal", 1200)
+        clean_text(item["proposal"], "proposal", 6000, multiline=True)
         if item["category"] not in ("skill", "axiom", "workflow_preference"):
             raise ValueError("Invalid promotion category")
         ids = item["ids"]
@@ -317,6 +378,10 @@ def parse_copilot_output(text):
 
 
 def call_copilot(store, kind, rows):
+    templates = {"daily": "daily_observer.md", "weekly": "weekly_reflector.md",
+                 "observer": "history_observer.md"}
+    if kind not in templates:
+        raise ValueError("Unknown memory model operation")
     config_path = store.local / "config.json"
     if not config_path.exists():
         raise ValueError("Install the memory runtime first; missing .local/config.json")
@@ -333,9 +398,11 @@ def call_copilot(store, kind, rows):
     secret = token.stdout.strip()
     env["COPILOT_GITHUB_TOKEN"] = secret
     template = (store.root / "periodic_jobs" / "ai_heartbeat" / "prompts" /
-                ("daily_observer.md" if kind == "daily" else "weekly_reflector.md"))
+                templates[kind])
+    fields = ("id", "source", "request") if kind == "observer" else (
+        "id", "source", "observation", "evidence")
     prompt = template.read_text(encoding="utf-8") + "\nINPUT_JSON:\n" + json.dumps(
-        [{k: r[k] for k in ("id", "source", "observation", "evidence")} for r in rows],
+        [{k: r[k] for k in fields} for r in rows],
         ensure_ascii=False,
     )
     command = config["copilot_command"] + [
@@ -359,9 +426,27 @@ def call_copilot(store, kind, rows):
                     stream.close()
         raise RuntimeError("Copilot timed out; no memory decisions applied") from exc
     if process.returncode:
+        if kind == "observer":
+            raise RuntimeError(f"Copilot observer failed with exit {process.returncode}; "
+                               "raw diagnostics withheld to protect input context")
         detail = SECRET.sub("[REDACTED]", stderr.replace(secret, "[REDACTED]"))[-1200:]
         raise RuntimeError(f"Copilot failed with exit {process.returncode}: {detail}")
     return parse_copilot_output(stdout)
+
+
+def weekly_rows(store, accepted):
+    with store.connection() as db:
+        covered = {r[0] for r in db.execute("SELECT DISTINCT candidate_id FROM review_inputs")}
+    new = [row for row in accepted if row["id"] not in covered]
+    if not new:
+        return [], 0
+    context = [row for row in reversed(accepted) if row["id"] in covered][:32]
+    selected = new[:128 - len(context)] + context
+    if len({row["source"] for row in selected}) == 1:
+        alternative = next((row for row in accepted if row["source"] != selected[0]["source"]), None)
+        if alternative is not None:
+            selected[-1] = alternative
+    return sorted(selected, key=lambda row: (row["created"], row["id"])), len(new)
 
 
 def run_worker(store, kind, model=call_copilot):
@@ -377,15 +462,20 @@ def run_worker(store, kind, model=call_copilot):
             rows = store.rows("pending" if kind == "daily" else "accepted")
             if kind == "daily":
                 rows = rows[:MAX_BATCH]
+            else:
+                rows, unreviewed = weekly_rows(store, rows)
             review_id = hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
             with store.connection() as db:
                 reviewed = db.execute("SELECT 1 FROM reviews WHERE id=?", (review_id,)).fetchone()
             if not rows or (kind == "weekly" and
                             (len({r["source"] for r in rows}) < 2 or reviewed)):
+                if kind == "weekly" and rows and reviewed:
+                    # An exact legacy snapshot hash proves its complete input set.
+                    with store.connection() as db:
+                        db.executemany("INSERT OR IGNORE INTO review_inputs VALUES (?,?)",
+                                       [(review_id, row["id"]) for row in rows])
                 result = {"state": "skipped", "reason": "No new eligible inputs"}
             else:
-                if kind == "weekly" and len(rows) > 128:
-                    raise ValueError("Weekly input exceeds 128 entries; review/curate memory before retry")
                 payload = model(store, kind, rows)
                 if kind == "daily":
                     decisions = daily_decisions(payload, rows)
@@ -397,9 +487,14 @@ def run_worker(store, kind, model=call_copilot):
                 else:
                     weekly_proposals(payload, rows)
                     with store.connection() as db:
+                        covered = {r[0] for r in db.execute("SELECT DISTINCT candidate_id FROM review_inputs")}
                         db.execute("INSERT INTO reviews(id,created,payload) VALUES (?,?,?)",
                                    (review_id, now(), json.dumps(payload, ensure_ascii=False)))
+                        db.executemany("INSERT INTO review_inputs VALUES (?,?)",
+                                       [(review_id, row["id"]) for row in rows])
                     result = {"state": "success", "proposals": len(payload["proposals"]),
+                              "new_observations_reviewed": sum(r["id"] not in covered for r in rows),
+                              "remaining_unreviewed": unreviewed - sum(r["id"] not in covered for r in rows),
                               "review": str(store.local / "reviews" / f"{review_id}.md")}
             store.render()
             result["semantic_search"] = semantic_status(store.root)

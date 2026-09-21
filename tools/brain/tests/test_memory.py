@@ -152,6 +152,55 @@ class MemoryTests(unittest.TestCase):
                 with memory.worker_lock(self.store.local):
                     self.fail("Second worker acquired the lock")
 
+    def test_weekly_drains_large_backlog_in_bounded_windows(self):
+        with self.store.connection() as db:
+            for index in range(140):
+                key, fields = memory.prepare_record(record(
+                    source=f"source-{index % 2}", observation=f"Verified reusable method {index}."))
+                db.execute("INSERT INTO candidates(id,created,source,observation,evidence,state,reason)"
+                           " VALUES (?,?,?,?,?,'accepted','fixture')",
+                           (key, memory.now(), fields["source"], fields["observation"], fields["evidence"]))
+        sizes = []
+        def review(store, kind, rows):
+            sizes.append(len(rows))
+            return {"proposals": []}
+        first = memory.run_worker(self.store, "weekly", review)
+        self.assertEqual(first["remaining_unreviewed"], 12)
+        second = memory.run_worker(self.store, "weekly", review)
+        self.assertEqual(second["remaining_unreviewed"], 0)
+        self.assertEqual(self.store.status()["unreviewed_observations"], 0)
+        self.assertTrue(all(size <= 128 for size in sizes))
+        self.assertEqual(memory.run_worker(self.store, "weekly", review)["state"], "skipped")
+        self.assertEqual(len(sizes), 2)
+
+    def test_legacy_review_snapshot_backfills_coverage_without_model(self):
+        self.store.capture(record())
+        self.store.capture(record(source="second-source"))
+        memory.run_worker(self.store, "daily", keep_model)
+        memory.run_worker(self.store, "weekly", lambda *args: {"proposals": []})
+        with self.store.connection() as db:
+            db.execute("DELETE FROM review_inputs")
+        def unexpected(*args):
+            self.fail("Exact legacy snapshot must not be regenerated")
+        self.assertEqual(memory.run_worker(self.store, "weekly", unexpected)["state"], "skipped")
+        self.assertEqual(self.store.status()["unreviewed_observations"], 0)
+
+    def test_weekly_supports_full_markdown_without_relaxing_capture(self):
+        self.store.capture(record())
+        self.store.capture(record(source="independent-source"))
+        rows = self.store.rows("pending")
+        body = "### Goal\n" + "A bounded method with explicit evidence and acceptance criteria. " * 30
+        proposal = {"title": "Draft", "category": "skill", "proposal": body,
+                    "ids": [row["id"] for row in rows]}
+        self.assertGreater(len(body), 1200)
+        self.assertEqual(memory.weekly_proposals({"proposals": [proposal]}, rows)["proposals"][0]["proposal"],
+                         body)
+        for invalid in ("bad\x00body", "x" * 6001):
+            with self.assertRaises(ValueError):
+                memory.weekly_proposals({"proposals": [dict(proposal, proposal=invalid)]}, rows)
+        with self.assertRaises(ValueError):
+            self.store.capture(record(observation=body))
+
     def test_views_can_be_rebuilt_and_interrupted_run_is_visible(self):
         self.store.capture(record())
         (self.store.local / "INBOX.md").write_text("broken", encoding="utf-8")

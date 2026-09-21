@@ -69,16 +69,14 @@ context-infrastructure/
 │
 ├── tools/
 │   ├── brain/                   # 事务记忆 CLI 和测试
-│   ├── semantic_search/          # 暂缓启用的旧本地实现
 │   └── archive/                  # 未启用的外部集成
 │
 ├── integrations/copilot/        # 原生 skill 与全局入口安装器
 └── adhoc_jobs/                  # 按需任务存放目录
 ```
 
-> 正式启用语义搜索时使用独立 public repo
-> [semantic-search-skill](https://github.com/grapeot/semantic-search-skill)；`tools/semantic_search/`
-> 仅保留为暂缓处理的旧实现。
+> 当前采用目录索引与关键词检索，不再保留旧 embedding 后端。
+> 如后续需要语义搜索，再单独确认数据范围、服务与成本；它不是现有记忆流水线的依赖。
 
 ---
 
