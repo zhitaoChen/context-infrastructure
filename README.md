@@ -28,10 +28,6 @@ Copilot CLI 通过用户级
 
 如果你想把它扩展成更完整的工作系统，可以看 [`docs/SKILL_ECOSYSTEM.md`](docs/SKILL_ECOSYSTEM.md)。那里列了一组可单独安装的 public skill repo，例如 Web 搜索、Google Docs、Google Maps、邮件/newsletter、OpenCode、PPTX、社交媒体、支付分析、家庭网络分析和本地 process launcher。`context-infrastructure` 保持轻量；完整能力通过独立 repo 按需安装。
 
-本地语音转文字可使用 [`tools/voice/transcribe.ps1`](tools/voice/transcribe.ps1)。
-它通过 Foundry Local 运行 Whisper，支持麦克风听写和音频文件转写；安装与用法见
-[`docs/VOICE.md`](docs/VOICE.md)。
-
 ---
 
 ## 目录结构
