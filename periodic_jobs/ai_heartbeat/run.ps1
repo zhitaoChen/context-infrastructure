@@ -15,6 +15,13 @@ if ($code -ne 0) {
     Write-Error "History collection failed (exit $code). Memory $Kind not started. See $log" -ErrorAction Continue
     exit $code
 }
+& $config.python (Join-Path $root 'tools\brain\agent_history.py') --root $root collect 2>&1 |
+    Out-File -LiteralPath $log -Encoding utf8 -Append
+$code = $LASTEXITCODE
+if ($code -ne 0) {
+    Write-Error "Agent history collection failed (exit $code). Memory $Kind not started. See $log" -ErrorAction Continue
+    exit $code
+}
 if ($Kind -eq 'daily') {
     & $config.python (Join-Path $root 'tools\brain\observer.py') --root $root run 2>&1 |
         Out-File -LiteralPath $log -Encoding utf8 -Append

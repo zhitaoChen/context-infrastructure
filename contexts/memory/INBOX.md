@@ -40,15 +40,20 @@
 `.local` 已被 Git 忽略。Markdown 是可重建视图，不直接编辑。
 上述直接采集依赖 Agent 主动执行，不是强制 session-end hook。
 
-## Copilot 历史引用与定时提炼
+## 本地 Agent 历史引用与定时提炼
 
-可选择启用本地历史采集器，定时只读扫描获准仓库的 Copilot 历史，将会话 ID、
+可选择启用本地历史采集器，定时只读扫描获准的 Copilot、Claude Code 和 Codex
+历史，将来源、会话 ID、
 轮次、时间和内容摘要哈希写入独立队列。不复制原始会话、项目名、路径或代码到
 队列，不调用模型；引用不等于已接受的记忆。连接配置中的历史数据库路径仅保存在
-Git 忽略的 `.local\history.json`，不进入模型输入。
+Git 忽略的 `.local\history.json` 和 `.local\agent_history.json`，不进入模型输入。
 
-授权并启用 `tools\brain\observer.py configure --confirmed` 后，每日定时任务会自动
-从引用中选取有界、可独立理解的用户工作流请求，交给现有 Copilot 提炼候选。
+Claude Code 读取 `~\.claude\projects\**\*.jsonl`，Codex 读取
+`~\.codex\sessions\**\rollout-*.jsonl` 和 `~\.codex\archived_sessions`。
+不需要对应 CLI 正在运行。本地来源无法证明项目是否公开，因此默认进入
+`needs_review`，不自动发送给模型；交互审阅仍需逐条确认安全抽象。
+授权并启用 `tools\brain\observer.py configure --confirmed` 后，每日定时任务会从
+非保护来源中选取有界、可独立理解的用户工作流请求，交给现有 Copilot 提炼候选。
 不会发送完整对话、助手回答或工具输出。疑似敏感、含代码/链接、内部命名空间或
 过长的内容进入 `needs_review`，不进入后台模型；无需为了普通合格请求逐次提醒 Agent。
 候选与引用进度事务提交，再经过 daily 分类；weekly 自动生成待审的完整草稿。

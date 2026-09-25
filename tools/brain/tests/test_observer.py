@@ -88,12 +88,15 @@ class ObserverTests(unittest.TestCase):
             "[Scheduled prompt #4]\nverify workflow",
             "<system_notification>verify</system_notification>",
             "<skill-context name='fixture'>verify",
+            "<system-reminder>verify workflow</system-reminder>",
+            "<environment_context>verify workflow</environment_context>",
+            "<user_instructions>verify workflow</user_instructions>",
             "请继续",
         )):
             self.turn(index=index, message=text)
         def unexpected(*args):
             self.fail("Automation reached the model")
-        self.assertEqual(observer.run(self.store, unexpected)["dismissed"], 6)
+        self.assertEqual(observer.run(self.store, unexpected)["dismissed"], 9)
         self.assertEqual(self.store.rows("pending"), [])
 
     def test_malformed_model_batch_does_not_consume_any_input(self):
@@ -174,7 +177,7 @@ class ObserverTests(unittest.TestCase):
     def test_source_switch_requires_reconfiguration(self):
         self.turn()
         config = observer.load_config(self.store)
-        config["history_origin"] = "wrong-origin"
+        config["history_origins"] = ["wrong-origin"]
         memory.atomic_write(self.store.local / "observer.json", json.dumps(config))
         with self.assertRaisesRegex(ValueError, "source changed"):
             observer.run(self.store, extract_model)

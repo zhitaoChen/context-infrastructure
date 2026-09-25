@@ -42,7 +42,7 @@ $triggers = @(
 )
 for ($i = 0; $i -lt $names.Count; $i++) {
     $kind = @('daily', 'weekly')[$i]
-    $modelCalls = if ($kind -eq 'daily') { 2 } else { 1 }
+    $modelCalls = if ($kind -eq 'daily') { 3 } else { 2 }
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
         -ExecutionTimeLimit (New-TimeSpan -Seconds ($modelCalls * $TimeoutSeconds + 120)) `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries

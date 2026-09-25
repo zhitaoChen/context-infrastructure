@@ -38,7 +38,8 @@ python <brain-root>\tools\brain\memory.py status
 ```
 
 采集有两个入口：Agent 主动提交已验证方法；或用户确认范围并启用 Observer 后，
-由定时器只读扫描本地 Copilot 历史、筛选独立工作流请求，再自动提炼非敏感方法。
+由定时器只读扫描本地 Copilot、Claude Code 和 Codex 历史、筛选独立工作流请求，
+再自动提炼非敏感方法。
 Observer 复用现有 Copilot；疑似敏感、代码/链接等内容保留给本地交互审阅。
 没有强制 session-end hook，不 dump 完整对话，不把助手或工具输出交给后台模型。
 历史引用与长期记忆分开计数，未提炼的引用不会成为 daily 的模型输入。

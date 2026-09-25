@@ -20,6 +20,7 @@ MAX_REFERENCES = 16
 MAX_SCAN = 5000
 AUTOMATED = (
     "[Scheduled prompt", "<system_notification>", "<skill-context",
+    "<system-reminder", "<environment_context>", "<user_instructions>",
     "# Daily workflow-memory classifier", "# Weekly workflow-memory reviewer",
     "# Scheduled workflow-memory observer", "Return exactly {",
 )
@@ -85,12 +86,22 @@ def load_config(store):
     if not path.exists():
         return None
     config = json.loads(path.read_text(encoding="utf-8-sig"))
-    memory.exact_keys(config, ["version", "enabled", "history_origin", "max_references", "scan_limit"])
-    if type(config["version"]) is not int or config["version"] != 1 or type(config["enabled"]) is not bool:
+    if config.get("version") == 1:
+        memory.exact_keys(config, ["version", "enabled", "history_origin",
+                                   "max_references", "scan_limit"])
+        config = dict(config, history_origins=[config["history_origin"]])
+        del config["history_origin"]
+        config["version"] = 2
+    else:
+        memory.exact_keys(config, ["version", "enabled", "history_origins",
+                                   "max_references", "scan_limit"])
+    if type(config["version"]) is not int or config["version"] != 2 or type(config["enabled"]) is not bool:
         raise ValueError("Unsupported observer configuration")
     if (type(config["max_references"]) is not int or not 1 <= config["max_references"] <= MAX_REFERENCES
             or type(config["scan_limit"]) is not int or not 1 <= config["scan_limit"] <= MAX_SCAN
-            or not isinstance(config["history_origin"], str)):
+            or not isinstance(config["history_origins"], list)
+            or not config["history_origins"]
+            or any(not isinstance(value, str) for value in config["history_origins"])):
         raise ValueError("Invalid observer limits or source")
     return config
 
@@ -99,11 +110,11 @@ def configure(store, confirmed=False):
     if not confirmed:
         raise ValueError("Scheduled extraction requires explicit user authorization")
     with memory.worker_lock(store.local):
-        source = history.load_config(store)
-        if source is None or not source["enabled"]:
+        source_origins = history.authorized_origins(store)
+        if not source_origins:
             raise ValueError("Configure and enable the approved history source first")
         config = {
-            "version": 1, "enabled": True, "history_origin": history.origin_id(source),
+            "version": 2, "enabled": True, "history_origins": source_origins,
             "max_references": MAX_REFERENCES, "scan_limit": MAX_SCAN,
         }
         memory.atomic_write(store.local / "observer.json", json.dumps(config, indent=2) + "\n")
@@ -111,39 +122,34 @@ def configure(store, confirmed=False):
             "max_references": MAX_REFERENCES, "model": "configured_copilot"}
 
 
-def select_batch(store, config, source_config):
-    origin = history.origin_id(source_config)
-    if config["history_origin"] != origin:
+def select_batch(store, config):
+    current_origins = history.authorized_origins(store)
+    if set(config["history_origins"]) != set(current_origins):
         raise ValueError("History source changed; explicitly reconfigure the observer")
+    placeholders = ",".join("?" for _ in current_origins)
     with store.connection() as db:
         pending = [dict(r) for r in db.execute(
-            "SELECT * FROM history_queue WHERE state='pending' AND origin=?"
+            f"SELECT * FROM history_queue WHERE state='pending' AND origin IN ({placeholders})"
             " ORDER BY turn_time DESC,session_id,turn_index DESC,id LIMIT ?",
-            (origin, config["scan_limit"]),
+            (*current_origins, config["scan_limit"]),
         )]
     inputs, routes = [], []
-    scope, params = history.scope_sql(source_config)
-    with history.source_connection(source_config) as source:
-        for ref in pending:
-            row = source.execute(
-                "SELECT t.*,s.repository FROM turns t JOIN sessions s ON s.id=t.session_id"
-                " WHERE t.session_id=? AND t.turn_index=? AND julianday(t.timestamp)>=julianday(?)"
-                " AND " + scope,
-                [ref["session_id"], ref["turn_index"], source_config["since"], *params],
-            ).fetchone()
-            if row is None:
-                routes.append((ref, "needs_review", "source_unavailable"))
-                continue
-            if history.turn_digest(row) != ref["content_digest"]:
-                raise ValueError("History changed after collection; run collection again before extraction")
-            state, reason, request = select_request(row["repository"], row["user_message"])
-            if state == "model":
-                inputs.append({"id": ref["id"], "source": f"copilot-session:{ref['session_id']}",
-                               "request": request, "ref": ref})
-                if len(inputs) == config["max_references"]:
-                    break
-            else:
-                routes.append((ref, state, reason))
+    for ref in pending:
+        row = history.get_turn(store, ref)
+        if row is None:
+            routes.append((ref, "needs_review", "source_unavailable"))
+            continue
+        if row["content_digest"] != ref["content_digest"]:
+            raise ValueError("History changed after collection; run collection again before extraction")
+        state, reason, request = select_request(row["repository"], row["user_message"])
+        if state == "model":
+            source = f"{row['_source']}-session:{ref['session_id']}"
+            inputs.append({"id": ref["id"], "source": source,
+                           "request": request, "ref": ref})
+            if len(inputs) == config["max_references"]:
+                break
+        else:
+            routes.append((ref, state, reason))
     return inputs, routes
 
 
@@ -163,7 +169,10 @@ def validate_decisions(payload, inputs):
         if item["decision"] == "extract":
             if item["reason"] != "" or not isinstance(item["observations"], list) or not 1 <= len(item["observations"]) <= 2:
                 raise ValueError("Extraction requires one or two observations and an empty reason")
-            prepared = history.prepare_observations(ref, {"observations": item["observations"]})
+            source = next(row["source"] for row in inputs if row["id"] == key)
+            prepared = history.prepare_observations(
+                ref, {"observations": item["observations"]}, source
+            )
             if any(unsafe_text(fields["observation"]) or unsafe_text(fields["evidence"])
                    for _, fields in prepared):
                 raise ValueError("Observer output failed the local content boundary; no batch applied")
@@ -189,13 +198,13 @@ def run(store, model=memory.call_copilot):
             db.execute("INSERT INTO runs(id,kind,started,state) VALUES (?,?,?,'running')",
                        (run_id, "observer", memory.now()))
         try:
-            config, source_config = load_config(store), history.load_config(store)
+            config = load_config(store)
             if config is None or not config["enabled"]:
                 result = {"state": "skipped", "reason": "Scheduled observer not configured or disabled"}
             else:
-                if source_config is None or not source_config["enabled"]:
+                if not history.authorized_origins(store):
                     raise ValueError("Observer enabled but approved history source is disabled")
-                inputs, routes = select_batch(store, config, source_config)
+                inputs, routes = select_batch(store, config)
                 decisions = validate_decisions(model(store, "observer", inputs), inputs) if inputs else []
                 # Recheck versions after inference; commit all observations and dispositions together.
                 for ref, _, _, _ in decisions:

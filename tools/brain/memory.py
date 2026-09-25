@@ -255,6 +255,8 @@ class Store:
         return {"counts": counts, "review_batches": reviews, "pending_reviews": pending, "recent_runs": runs,
                 "unreviewed_observations": unreviewed,
                 "history": {"configured": (self.local / "history.json").is_file(),
+                            "agent_history_configured":
+                                (self.local / "agent_history.json").is_file(),
                             "counts": history_counts,
                             "observer_configured": (self.local / "observer.json").is_file()},
                 "semantic_search": semantic_status(self.root)}
@@ -476,16 +478,27 @@ def run_worker(store, kind, model=call_copilot):
                                        [(review_id, row["id"]) for row in rows])
                 result = {"state": "skipped", "reason": "No new eligible inputs"}
             else:
-                payload = model(store, kind, rows)
+                attempts = 0
+                while True:
+                    attempts += 1
+                    try:
+                        payload = model(store, kind, rows)
+                        if kind == "daily":
+                            decisions = daily_decisions(payload, rows)
+                        else:
+                            weekly_proposals(payload, rows)
+                        break
+                    except ValueError:
+                        if attempts >= 2:
+                            raise
                 if kind == "daily":
-                    decisions = daily_decisions(payload, rows)
                     with store.connection() as db:
                         for key, state, reason in decisions:
                             db.execute("UPDATE candidates SET state=?,reason=? WHERE id=? AND state='pending'",
                                        (state, reason, key))
-                    result = {"state": "success", "processed": len(decisions)}
+                    result = {"state": "success", "processed": len(decisions),
+                              "model_attempts": attempts}
                 else:
-                    weekly_proposals(payload, rows)
                     with store.connection() as db:
                         covered = {r[0] for r in db.execute("SELECT DISTINCT candidate_id FROM review_inputs")}
                         db.execute("INSERT INTO reviews(id,created,payload) VALUES (?,?,?)",
@@ -493,6 +506,7 @@ def run_worker(store, kind, model=call_copilot):
                         db.executemany("INSERT INTO review_inputs VALUES (?,?)",
                                        [(review_id, row["id"]) for row in rows])
                     result = {"state": "success", "proposals": len(payload["proposals"]),
+                              "model_attempts": attempts,
                               "new_observations_reviewed": sum(r["id"] not in covered for r in rows),
                               "remaining_unreviewed": unreviewed - sum(r["id"] not in covered for r in rows),
                               "review": str(store.local / "reviews" / f"{review_id}.md")}

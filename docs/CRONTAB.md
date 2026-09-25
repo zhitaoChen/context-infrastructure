@@ -30,13 +30,14 @@
 
 配置在 Git 忽略的 `contexts\memory\.local\config.json`。
 按用户选择不设 AI Credits 上限；单次模型调用默认 600 秒超时，
-每日最多两次模型调用，任务上限默认 22 分钟；每周一次，默认 12 分钟。
+每日和每周在模型返回无效结构时最多重试一次，不对认证、超时或进程错误重试；
+任务执行时限按安装器配置预留。
 两者均额外预留 120 秒。无合格输入时不调用模型，不进行无限重试。
 
 ## 数据流与恢复
 
 ```text
-获准的本地 Copilot 历史 -> 只读扫描 -> SQLite 历史引用队列
+获准的本地 Copilot / Claude Code / Codex 历史 -> 只读扫描 -> SQLite 历史引用队列
   -> 本地排除自动提示、敏感内容和不可独立理解的片段
   -> Observer: 有界工作流请求 -> 方法候选 + 引用处理结果（同一事务）
   -> 需本地审阅的内容保留 needs_review，不进入模型
@@ -99,6 +100,32 @@ python .\tools\brain\history.py disable
 未配置/已停用时会显式记录 skipped，保留原有直接 capture 流程；
 启用后采集失败则整个 runner 返回非零，不继续用旧输入掩盖错误。
 配置独立保存在 `.local\history.json`，重新安装定时器不会覆盖它。
+
+### Claude Code 与 Codex
+
+这两个来源使用独立配置，避免改变 Copilot 数据库的授权范围和引用 origin：
+
+```powershell
+python .\tools\brain\agent_history.py configure `
+  --source claude --source codex --backfill-days 3650 --confirmed
+python .\tools\brain\agent_history.py collect
+```
+
+`claude` 只读扫描 `~\.claude\projects\**\*.jsonl`，排除 subagent sidechain；
+`codex` 只读扫描 `~\.codex\sessions` 与 `archived_sessions` 的 rollout JSONL。
+只提取用户消息，不采集 reasoning、工具输出、Claude 生成型 user 事件或 assistant 回复。
+由于本地目录不能证明仓库是公开来源，Claude/Codex 引用默认进入 `needs_review`，
+不会由无人值守 Observer 发送给模型；交互审阅仍需逐条确认安全抽象。队列只保存来源 origin、
+会话 ID、轮次、时间和内容哈希；原始消息只在 Observer 筛选单条请求时重新从本地读取。
+配置路径保存在 Git 忽略的 `.local\agent_history.json`。
+
+修改来源或回补范围后必须重新执行 `observer.py configure --confirmed`，使 Observer
+明确绑定当前所有获准 origin。每日和每周 runner 会先采集 Copilot，再采集这两个来源。
+禁用但保留队列：
+
+```powershell
+python .\tools\brain\agent_history.py disable
+```
 
 ## 启用定时 Observer
 

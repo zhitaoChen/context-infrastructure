@@ -23,6 +23,45 @@ REFERENCE_FIELDS = "id,session_id,turn_index,turn_time,state"
 MAX_TURNS = 5000
 
 
+class ReadOnlyConnection:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def execute(self, statement, parameters=()):
+        operation = statement.lstrip().split(None, 1)[0].upper()
+        if operation not in ("SELECT", "WITH", "PRAGMA", "BEGIN"):
+            raise sqlite3.OperationalError("History source connection is read-only")
+        cursor = self.connection.execute(statement, parameters)
+        try:
+            return ReadOnlyResult(cursor.fetchall())
+        finally:
+            cursor.close()
+
+    def __getattr__(self, name):
+        return getattr(self.connection, name)
+
+
+class ReadOnlyResult:
+    def __init__(self, rows):
+        self.rows = rows
+        self.position = 0
+
+    def fetchone(self):
+        if self.position >= len(self.rows):
+            return None
+        row = self.rows[self.position]
+        self.position += 1
+        return row
+
+    def fetchall(self):
+        rows = self.rows[self.position:]
+        self.position = len(self.rows)
+        return rows
+
+    def __iter__(self):
+        return iter(self.fetchall())
+
+
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
@@ -61,22 +100,25 @@ def load_config(store):
 @contextmanager
 def source_connection(config):
     path = Path(config["database"])
-    # mode=ro must not create an empty database if the history path is wrong.
+    if not path.is_file():
+        raise sqlite3.OperationalError("Copilot history database does not exist")
     db = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=10)
     db.row_factory = sqlite3.Row
     try:
-        db.execute("PRAGMA query_only=ON")
+        source = ReadOnlyConnection(db)
+        source.execute("PRAGMA query_only=ON")
         for table, required in (
             ("sessions", {"id", "repository"}),
             ("turns", {"id", "session_id", "turn_index", "timestamp",
                        "user_message", "assistant_response"}),
         ):
-            columns = {r["name"] for r in db.execute(f"PRAGMA table_info({table})")}
+            columns = {r["name"] for r in source.execute(f"PRAGMA table_info({table})")}
             if not required <= columns:
                 raise ValueError("Unsupported Copilot local history schema; no inputs consumed")
-        db.execute("BEGIN")
-        yield db
+        source.execute("BEGIN")
+        yield source
     finally:
+        db.rollback()
         db.close()
 
 
@@ -267,22 +309,59 @@ def list_pending(store, limit=20, session=None, state="pending"):
 
 
 def verify_current_source(store, ref):
+    row = get_turn(store, ref)
+    if row is None or row["content_digest"] != ref["content_digest"]:
+        raise ValueError("Source turn is missing, changed or outside scope; collect and review again")
+
+
+def get_turn(store, ref):
     config = load_config(store)
-    if config is None or not config["enabled"] or origin_id(config) != ref["origin"]:
-        raise ValueError("Reference is outside the currently enabled history source")
-    scope, params = scope_sql(config)
-    with source_connection(config) as source:
-        row = source.execute(
-            "SELECT t.* FROM turns t JOIN sessions s ON s.id=t.session_id"
-            " WHERE t.session_id=? AND t.turn_index=? AND julianday(t.timestamp)>=julianday(?)"
-            " AND " + scope,
-            [ref["session_id"], ref["turn_index"], config["since"], *params],
-        ).fetchone()
-        if row is None or turn_digest(row) != ref["content_digest"]:
-            raise ValueError("Source turn is missing, changed or outside scope; collect and review again")
+    if config is not None and config["enabled"] and origin_id(config) == ref["origin"]:
+        scope, params = scope_sql(config)
+        with source_connection(config) as source:
+            row = source.execute(
+                "SELECT t.*,s.repository FROM turns t JOIN sessions s ON s.id=t.session_id"
+                " WHERE t.session_id=? AND t.turn_index=? AND julianday(t.timestamp)>=julianday(?)"
+                " AND " + scope,
+                [ref["session_id"], ref["turn_index"], config["since"], *params],
+            ).fetchone()
+            if row is None:
+                return None
+            value = dict(row)
+            value["content_digest"] = turn_digest(row)
+            value["_source"] = "copilot"
+            return value
+    if __package__:
+        from . import agent_history
+    else:
+        import agent_history
+    row = agent_history.get_turn(store, ref)
+    if row is not None:
+        row["_source"] = row["source"]
+    return row
 
 
-def prepare_observations(ref, payload):
+def authorized_origins(store):
+    values = []
+    config = load_config(store)
+    if config is not None and config["enabled"]:
+        values.append(origin_id(config))
+    if __package__:
+        from . import agent_history
+    else:
+        import agent_history
+    values.extend(agent_history.origins(agent_history.load_config(store)))
+    return values
+
+
+def reference_source(store, ref):
+    row = get_turn(store, ref)
+    if row is None:
+        raise ValueError("Reference is outside scope or its history source is disabled")
+    return f"{row['_source']}-session:{ref['session_id']}"
+
+
+def prepare_observations(ref, payload, source=None):
     memory.exact_keys(payload, ["observations"])
     observations = payload["observations"]
     if not isinstance(observations, list) or not 1 <= len(observations) <= 8:
@@ -291,7 +370,7 @@ def prepare_observations(ref, payload):
     for item in observations:
         memory.exact_keys(item, ["observation", "evidence", "non_sensitive", "durable"])
         prepared.append(memory.prepare_record(
-            dict(item, source=f"copilot-session:{ref['session_id']}")
+            dict(item, source=source or f"copilot-session:{ref['session_id']}")
         ))
     if len({p[0] for p in prepared}) != len(prepared):
         raise ValueError("Duplicate observations in a distillation batch")
@@ -335,7 +414,9 @@ def resolve(store, key, decision, payload=None, reason="", confirmed=False):
             ref = db.execute("SELECT * FROM history_queue WHERE id=?", (key,)).fetchone()
             if ref is None:
                 raise ValueError("Unknown history reference")
-            prepared = prepare_observations(ref, payload) if decision == "distilled" else []
+            prepared = prepare_observations(
+                ref, payload, reference_source(store, ref)
+            ) if decision == "distilled" else []
             if decision == "distilled" and ref["state"] in ("pending", "needs_review"):
                 verify_current_source(store, ref)
             result = apply_resolution(db, ref, decision, prepared, reason)

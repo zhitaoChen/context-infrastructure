@@ -93,6 +93,22 @@ class MemoryTests(unittest.TestCase):
         memory.run_worker(self.store, "daily", keep_model)
         self.assertEqual(len(self.store.rows("accepted")), 2)
 
+    def test_daily_retries_one_invalid_model_response(self):
+        self.store.capture(record())
+        calls = 0
+
+        def flaky(store, kind, rows):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return {"decisions": [{"id": "unknown", "decision": "keep",
+                                       "reason": "Invalid first attempt"}]}
+            return keep_model(store, kind, rows)
+
+        result = memory.run_worker(self.store, "daily", flaky)
+        self.assertEqual(result["model_attempts"], 2)
+        self.assertEqual(len(self.store.rows("accepted")), 1)
+
     def test_duplicate_unknown_and_invalid_decisions(self):
         self.store.capture(record())
         rows = self.store.rows("pending")
