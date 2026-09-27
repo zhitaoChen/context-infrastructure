@@ -17,6 +17,7 @@
 | 延时执行、关闭 CLI 后仍需运行 | [调度边界](./delayed_execution.md) |
 | AI 编程的需求、成功标准、验证 | [编程方法论](./bestpractice_ai_programming_mindset.md) |
 | 调试失败、验证假设 | [调试诊断](./bestpractice_ai_debugging_diagnosis.md) |
+| 报告、观点、调研结论、复盘、超过两段的 Markdown | [证据加权写作](./bestpractice_evidence_weighted_writing.md)，再按受众加载内部或外部写作工作流 |
 | 项目脚手架与重整 | [脚手架](./project_scaffold.md) |
 | 风险隔离、分阶段处理 | [分阶段工作法](./bestpractice_staged_approach.md) |
 | GUI 自动化 | [GUI 方法论](./bestpractice_gui_automation.md) |

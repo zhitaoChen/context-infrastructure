@@ -12,6 +12,10 @@ as the brain root. If unavailable, report the missing path/permission instead of
 
 - Route capabilities using `rules\skills\INDEX.md`. These Markdown workflows are
   references behind this single native skill, not individually installed native skills.
+- For any report, analysis, opinion, retrospective, or Markdown longer than two paragraphs,
+  load `rules\skills\bestpractice_evidence_weighted_writing.md` before the audience-specific
+  writing workflow. Optimize for the reader's decision, evidence strength, and a one-minute
+  overview; do not turn collected material into an unfiltered inventory.
 - Load only matched references. Prefer already-installed native skills for actual
   search/API operations. External links do not mean an integration is installed.
 - For a multi-stage task or recovery, read `rules\skills\workflow_long_task_recovery.md`.
