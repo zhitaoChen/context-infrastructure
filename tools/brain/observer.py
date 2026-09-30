@@ -205,7 +205,18 @@ def run(store, model=memory.call_copilot):
                 if not history.authorized_origins(store):
                     raise ValueError("Observer enabled but approved history source is disabled")
                 inputs, routes = select_batch(store, config)
-                decisions = validate_decisions(model(store, "observer", inputs), inputs) if inputs else []
+                attempts = 0
+                decisions = []
+                while inputs:
+                    attempts += 1
+                    try:
+                        decisions = validate_decisions(
+                            model(store, "observer", inputs), inputs
+                        )
+                        break
+                    except ValueError:
+                        if attempts >= 2:
+                            raise
                 # Recheck versions after inference; commit all observations and dispositions together.
                 for ref, _, _, _ in decisions:
                     history.verify_current_source(store, ref)
@@ -234,7 +245,8 @@ def run(store, model=memory.call_copilot):
                     ).fetchone()[0]
                 result = {"state": "success", "model_inputs": len(inputs), "extracted_references": extracted,
                           "candidate_records": candidates, "held_for_review": held,
-                          "dismissed": dismissed, "pending_references": remaining}
+                          "dismissed": dismissed, "pending_references": remaining,
+                          "model_attempts": attempts}
             store.render()
             with store.connection() as db:
                 db.execute("UPDATE runs SET finished=?,state=?,detail=? WHERE id=?",

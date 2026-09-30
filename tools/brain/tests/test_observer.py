@@ -145,6 +145,21 @@ class ObserverTests(unittest.TestCase):
         self.assertEqual(len(history.list_pending(self.store)), 1)
         self.assertEqual(observer.run(self.store, extract_model)["candidate_records"], 1)
 
+    def test_invalid_model_output_retries_once(self):
+        self.turn()
+        calls = 0
+
+        def flaky(store, kind, rows):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return {"decisions": []}
+            return extract_model(store, kind, rows)
+
+        result = observer.run(self.store, flaky)
+        self.assertEqual(result["model_attempts"], 2)
+        self.assertEqual(result["candidate_records"], 1)
+
     def test_bounded_batches_and_actual_insert_counts(self):
         for index in range(observer.MAX_REFERENCES + 1):
             self.turn(index=index)
