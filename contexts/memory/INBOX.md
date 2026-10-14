@@ -61,6 +61,12 @@ Claude Code 读取 `~\.claude\projects\**\*.jsonl`，Codex 读取
 
 ## 补充交互审阅
 
+获授权的 pi 会话也可经 `agent_history.py` 进入同一引用队列。
+其树形节点采用稳定 ID 编码，`turn_index` 不是线性消息序号；
+通过原 session 和节点核对，不把它当作 Copilot 历史工具的轮次索引。
+与 Claude/Codex 一样，pi 原始内容默认保留给本地审阅，后台不直接发送给模型；
+只有已确认的非敏感抽象才进入 daily/weekly。
+
 用户要求回顾历史、提炼经验或处理积压时，先查看：
 
 ```powershell

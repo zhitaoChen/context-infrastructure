@@ -5,6 +5,10 @@
 
 ## 本机入口
 
+本次配置与演进的交接快照见
+[Brain 建设与长会话交接（2026-10-13）](docs/SESSION_HANDOFF_2026_10_13.md)。
+它记录关键任务、定时设置、状态边界与未完成项；实时运行状态仍以 CLI 和计划任务为准。
+
 - `AGENTS.md`：常驻规则和 lazy-loading 边界。
 - `rules/USER.md`：公开模板；本机配置在被 Git 忽略的 `rules/USER.local.md`。
 - `rules/skills/INDEX.md`：参考工作流索引，命中后再读具体文件。
@@ -44,6 +48,10 @@ Observer 复用现有 Copilot；疑似敏感、代码/链接等内容保留给�
 没有强制 session-end hook，不 dump 完整对话，不把助手或工具输出交给后台模型。
 历史引用与长期记忆分开计数，未提炼的引用不会成为 daily 的模型输入。
 实际数据、连接配置、日志、审阅稿在 `.local`，不提交到 Git。
+
+历史来源除 Copilot 外，还可按授权接入 Claude Code、Codex 和 pi 的本地会话。
+其他 Agent 的引用默认保留为待审，不等同于已自动提炼的方法；
+来源目录、pi 树形节点与配置步骤见 [自动记忆计划](docs/CRONTAB.md)。
 
 Windows 计划任务安装、运行身份和故障处理见 [自动记忆计划](docs/CRONTAB.md)：
 每日 00:00 提炼并分类；周日 23:30 生成完整草稿；只在用户确认后才改 rules。

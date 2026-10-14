@@ -29,7 +29,7 @@
 
 | 场景 | 参考文件 |
 |---|---|
-| 深度调研、交叉验证来源 | [深度调研](./workflow_deep_research_survey.md) |
+| 深度调研、独立交叉核验、证据缺口与有界检索 | [深度调研](./workflow_deep_research_survey.md) |
 | 股票 consensus net income、盈利预期口径核验 | [共识净利润审计](./workflow_public_consensus_net_income_audit.md) |
 | 论文分析、研究解读 | [论文调研写作](./workflow_research_paper_survey_writing.md) |
 | arXiv 下载和格式转换 | [论文转换](./bestpractice_academic_paper_conversion.md) |

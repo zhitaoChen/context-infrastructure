@@ -102,9 +102,9 @@ python .\tools\brain\history.py disable
 启用后采集失败则整个 runner 返回非零，不继续用旧输入掩盖错误。
 配置独立保存在 `.local\history.json`，重新安装定时器不会覆盖它。
 
-### Claude Code 与 Codex
+### Claude Code、Codex 与 pi
 
-这两个来源使用独立配置，避免改变 Copilot 数据库的授权范围和引用 origin：
+其他 Agent 来源使用独立配置，避免改变 Copilot 数据库的授权范围和引用 origin：
 
 ```powershell
 python .\tools\brain\agent_history.py configure `
@@ -114,14 +114,33 @@ python .\tools\brain\agent_history.py collect
 
 `claude` 只读扫描 `~\.claude\projects\**\*.jsonl`，排除 subagent sidechain；
 `codex` 只读扫描 `~\.codex\sessions` 与 `archived_sessions` 的 rollout JSONL。
+`pi` 支持已核验的 session version 3：默认扫描 `~\.pi\agent\sessions\**\*.jsonl`，
+尊重配置时的 `PI_CODING_AGENT_DIR`、`PI_CODING_AGENT_SESSION_DIR`。
+使用 `--session-dir` 的用户可以显式指定 `--pi-root '<absolute-directory>'`。
+配置后固定保存根目录，不因定时器环境不同而换到另一份历史。
+
+仅启用 pi、回补最近 30 天的示例：
+
+```powershell
+python .\tools\brain\agent_history.py configure --source pi --backfill-days 30 --confirmed
+python .\tools\brain\observer.py configure --confirmed
+```
+
+已有来源配置时，先核对原来源再以 `--replace` 提交完整来源列表，不能无意关闭原来源。
+pi 为树形会话，采集所有保留下来的用户分支节点，不只取当前活动分支；
+`turn_index` 是用户节点 ID 的稳定整数编码，不是原文件中的第几轮。
+分支切换或删去其他节点不会重编号。助手消息、系统上下文、工具输出、压缩摘要、
+自定义事件和图片数据不采集；重复导出不重复入队，冲突副本明确失败。
+未知 session 版本或完整行损坏会失败；活跃文件尾部尚未写完的 JSON 留待下次读取。
+
 只提取用户消息，不采集 reasoning、工具输出、Claude 生成型 user 事件或 assistant 回复。
-由于本地目录不能证明仓库是公开来源，Claude/Codex 引用默认进入 `needs_review`，
+由于本地目录不能证明仓库是公开来源，Claude/Codex/pi 引用默认进入 `needs_review`，
 不会由无人值守 Observer 发送给模型；交互审阅仍需逐条确认安全抽象。队列只保存来源 origin、
 会话 ID、轮次、时间和内容哈希；原始消息只在 Observer 筛选单条请求时重新从本地读取。
 配置路径保存在 Git 忽略的 `.local\agent_history.json`。
 
 修改来源或回补范围后必须重新执行 `observer.py configure --confirmed`，使 Observer
-明确绑定当前所有获准 origin。每日和每周 runner 会先采集 Copilot，再采集这两个来源。
+明确绑定当前所有获准 origin。每日和每周 runner 会先采集 Copilot，再采集已启用的 Agent 来源。
 禁用但保留队列：
 
 ```powershell

@@ -1,4 +1,4 @@
-"""Read-only Claude Code and Codex history references; never persist raw conversations."""
+"""Read-only Claude Code, Codex and pi history references; never persist raw conversations."""
 
 import argparse
 from datetime import datetime, timedelta, timezone
@@ -17,7 +17,7 @@ else:
     import memory
 
 
-SOURCES = ("claude", "codex")
+SOURCES = ("claude", "codex", "pi")
 MAX_TURNS = 5000
 SESSION_ID = re.compile(r"[\w-]{1,120}")
 GENERATED_CLAUDE_PREFIXES = (
@@ -52,6 +52,10 @@ def default_roots(source):
     if source == "codex":
         return [Path.home() / ".codex" / "sessions",
                 Path.home() / ".codex" / "archived_sessions"]
+    if source == "pi":
+        directory = os.environ.get("PI_CODING_AGENT_DIR")
+        agent = Path(directory) if directory else Path.home() / ".pi" / "agent"
+        return [Path(os.environ.get("PI_CODING_AGENT_SESSION_DIR") or agent / "sessions")]
     raise ValueError(f"Unsupported agent history source: {source}")
 
 
@@ -65,7 +69,7 @@ def load_config(store):
         raise ValueError("Unsupported agent history configuration")
     if (not isinstance(value["sources"], dict) or not value["sources"]
             or any(source not in SOURCES for source in value["sources"])):
-        raise ValueError("Agent history sources must contain Claude Code and/or Codex")
+        raise ValueError("Agent history sources must contain supported Claude Code, Codex or pi sources")
     for roots in value["sources"].values():
         if (not isinstance(roots, list) or not roots
                 or any(not isinstance(root, str) or not Path(root).is_absolute() for root in roots)):
@@ -75,7 +79,7 @@ def load_config(store):
     return value
 
 
-def configure(store, sources, backfill_days, confirmed=False, replace=False):
+def configure(store, sources, backfill_days, confirmed=False, replace=False, pi_root=None):
     if not confirmed:
         raise ValueError("Agent history scope and backfill require explicit user confirmation")
     if (not isinstance(sources, list) or not sources
@@ -83,12 +87,16 @@ def configure(store, sources, backfill_days, confirmed=False, replace=False):
         raise ValueError("Choose one or more supported agent history sources")
     if type(backfill_days) is not int or not 0 <= backfill_days <= 3650:
         raise ValueError("backfill_days must be between 0 and 3650")
+    if pi_root is not None and "pi" not in sources:
+        raise ValueError("--pi-root requires --source pi")
     path = store.local / "agent_history.json"
     with memory.worker_lock(store.local):
         if path.exists() and not replace:
             raise ValueError("Agent history is already configured; use --replace after reviewing scope")
         roots = {source: [str(root.resolve()) for root in default_roots(source)]
                  for source in sources}
+        if pi_root is not None:
+            roots["pi"] = [str(Path(pi_root).resolve())]
         if not any(Path(root).is_dir() for values in roots.values() for root in values):
             raise ValueError("None of the approved agent history directories exist")
         config = {
@@ -232,11 +240,82 @@ def make_row(source, session_id, index, stamp, text, cwd):
     }
 
 
+def pi_rows(roots):
+    identities = {}
+    for path in iter_jsonl(roots, "*.jsonl"):
+        if "subagents" in path.parts:
+            continue
+        header = None
+        indexes = {}
+        with path.open("r", encoding="utf-8-sig") as stream:
+            for line in stream:
+                if not line.strip():
+                    continue
+                if len(line) > 2 * 1024 * 1024:
+                    raise ValueError("pi session entry exceeds the supported size limit")
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    if not line.endswith("\n"):
+                        # An active session may be read between append operations.
+                        break
+                    raise ValueError("Malformed completed pi session entry; no references consumed") from exc
+                if not isinstance(event, dict):
+                    raise ValueError("pi session entry must be an object")
+                if header is None:
+                    if (event.get("type") != "session"
+                            or type(event.get("version")) is not int or event["version"] != 3
+                            or not isinstance(event.get("id"), str)
+                            or not SESSION_ID.fullmatch(event["id"])
+                            or not isinstance(event.get("cwd"), str)):
+                        raise ValueError("Unsupported pi session header; expected tree format version 3")
+                    header = event
+                    continue
+                if event.get("type") == "session":
+                    raise ValueError("Duplicate pi session header")
+                if event.get("type") != "message":
+                    continue
+                message = event.get("message")
+                if not isinstance(message, dict) or message.get("role") != "user":
+                    continue
+                entry = event.get("id")
+                stamp = utc_time(event.get("timestamp"))
+                if not isinstance(entry, str) or not SESSION_ID.fullmatch(entry) or stamp is None:
+                    raise ValueError("Invalid pi user entry identifier or timestamp")
+                content = message.get("content")
+                if (not isinstance(content, (str, list))
+                        or isinstance(content, list) and any(
+                            not isinstance(part, dict) or not isinstance(part.get("type"), str)
+                            or part["type"] == "text" and not isinstance(part.get("text"), str)
+                            for part in content)):
+                    raise ValueError("Unsupported pi user content structure")
+                user_text = extract_text(content)
+                if not user_text or user_text.lower().startswith(GENERATED_CLAUDE_PREFIXES):
+                    continue
+                # Branching or pruning must not renumber existing references.
+                turn_index = int(digest(["pi-entry", entry])[:15], 16)
+                if turn_index in indexes and indexes[turn_index] != entry:
+                    raise ValueError("pi entry index collision; no references consumed")
+                indexes[turn_index] = entry
+                row = make_row("pi", header["id"], turn_index, stamp, user_text, header["cwd"])
+                identity = (header["id"], entry)
+                previous = identities.get(identity)
+                signature = (row["content_digest"], row["timestamp"], row["cwd"])
+                if previous is not None:
+                    if previous != signature:
+                        raise ValueError("Conflicting copies of a pi session entry; review the source files")
+                    continue
+                identities[identity] = signature
+                yield row
+
+
 def scan_rows(config):
     rows = []
+    readers = {"claude": claude_rows, "codex": codex_rows, "pi": pi_rows}
     for source, roots in config["sources"].items():
-        iterator = claude_rows(roots) if source == "claude" else codex_rows(roots)
-        rows.extend(iterator)
+        if source not in readers:
+            raise ValueError("Unsupported agent history source")
+        rows.extend(readers[source](roots))
     rows.sort(key=lambda row: (row["timestamp"], row["source"],
                                row["session_id"], row["turn_index"]))
     return rows
@@ -328,7 +407,7 @@ def get_turn(store, ref):
     for row in scan_rows({"sources": {source: config["sources"][source]},
                           "since": config["since"]}):
         if row["session_id"] == ref["session_id"] and row["turn_index"] == ref["turn_index"]:
-            return row
+            return row if utc_time(row["timestamp"]) >= utc_time(config["since"]) else None
     return None
 
 
@@ -341,6 +420,7 @@ def main():
     setup.add_argument("--backfill-days", type=int, default=0)
     setup.add_argument("--confirmed", action="store_true")
     setup.add_argument("--replace", action="store_true")
+    setup.add_argument("--pi-root", type=Path, help="Explicit pi session directory for --session-dir users")
     scan = sub.add_parser("collect")
     scan.add_argument("--max-turns", type=int, default=MAX_TURNS)
     sub.add_parser("disable")
@@ -348,7 +428,8 @@ def main():
     try:
         store = memory.Store(args.root)
         if args.command == "configure":
-            result = configure(store, args.source, args.backfill_days, args.confirmed, args.replace)
+            result = configure(store, args.source, args.backfill_days, args.confirmed, args.replace,
+                               args.pi_root)
         elif args.command == "collect":
             result = collect(store, args.max_turns)
         else:
