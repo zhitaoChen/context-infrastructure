@@ -30,6 +30,9 @@ Pi 复用已有本机认证，模型禁用工具、扩展、MCP、上下文加�
 锁屏、关闭 Pi 不影响；需要本机保持登录和联网，关机/注销时无法执行，恢复后尝试补跑。
 结果与日志位于 `.local/pi_daily_result.json`、`pi_weekly_result.json` 和对应 `.log`。
 用 `Get-ScheduledTaskInfo` 核对退出码，失败应本地检查，不能把 State=Ready 当作成功。
+日／周任务共享运行锁，不要同时手动触发；锁冲突会返回非零，前一个结束后再重试。
+回归测试：`python -m unittest discover -s tools/brain/tests`，包含受限 Pi 协议、
+敏感路径排除、暂存区保护、文件变更检测、CRLF、删除与失败推送重试等检查。
 
 ## 原 Copilot 后台方案（保留，非当前执行器）
 
