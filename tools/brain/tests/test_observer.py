@@ -1,3 +1,4 @@
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -25,7 +26,7 @@ class ObserverTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / "AGENTS.md").write_text("Fixture", encoding="utf-8")
         self.source = self.root / "source.db"
-        with sqlite3.connect(self.source) as db:
+        with closing(sqlite3.connect(self.source)) as db, db:
             db.executescript("""
                 CREATE TABLE sessions(id TEXT PRIMARY KEY,repository TEXT);
                 CREATE TABLE turns(id INTEGER PRIMARY KEY,session_id TEXT,turn_index INTEGER,
@@ -41,7 +42,7 @@ class ObserverTests(unittest.TestCase):
 
     def turn(self, index=0, message="Always verify the real outputs. REQUEST_SENTINEL",
              repository="fixture/repo", session="session-a"):
-        with sqlite3.connect(self.source) as db:
+        with closing(sqlite3.connect(self.source)) as db, db:
             db.execute("INSERT OR IGNORE INTO sessions VALUES (?,?)", (session, repository))
             db.execute("INSERT INTO turns(session_id,turn_index,user_message,assistant_response,timestamp)"
                        " VALUES (?,?,?,?,?)", (session, index, message, "ASSISTANT_CODE_SENTINEL",
@@ -125,7 +126,7 @@ class ObserverTests(unittest.TestCase):
     def test_changed_source_after_inference_rolls_back(self):
         self.turn()
         def changing(store, kind, rows):
-            with sqlite3.connect(self.source) as db:
+            with closing(sqlite3.connect(self.source)) as db, db:
                 db.execute("UPDATE turns SET user_message='Verify the revised result'")
             return extract_model(store, kind, rows)
         with self.assertRaisesRegex(ValueError, "changed"):

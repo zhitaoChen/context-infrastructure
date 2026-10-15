@@ -1,5 +1,38 @@
 # Windows 自动记忆计划
 
+## Pi 后台方案（当前选择）
+
+使用 Windows Task Scheduler，不依赖打开的 Pi 会话，也不使用 Copilot CLI。
+每日 00:00 分类已主动采集的非敏感候选，然后检查公开文件，有合格改动才 commit/push；
+周日 23:30 比较已接受观察并生成本机待审草稿，不自动应用到 rules。
+当前机器的安装状态以 `Get-ScheduledTask` 为准，旧交接快照不是实时证据。
+
+```powershell
+.\periodic_jobs\ai_heartbeat\install_pi.ps1 -Provider '<pi-provider>' -Model '<model-id>'
+Get-ScheduledTask -TaskName 'PersonalBrain-Pi-Daily','PersonalBrain-Pi-Weekly'
+Start-ScheduledTask -TaskName 'PersonalBrain-Pi-Daily'
+python .\tools\brain\pi_schedule.py --kind daily --dry-run
+```
+
+配置位于 Git 忽略的 `.local/pi_runtime.json`，只记录运行路径和模型标识，不复制密钥。
+Pi 复用已有本机认证，模型禁用工具、扩展、MCP、上下文加载与会话持久化。
+不会启用或扫描历史来源；Pi/Claude/Codex 原文仍保留待审，不批量发送给模型。
+无输入则跳过模型，不制造每日观察或周度提案。
+
+自动推送仅涵盖本仓库已跟踪的规则、文档、基础设施脚本等明确路径，
+不包含 `.local`、contexts 原文、USER.local、凭据、日志、archive 或未跟踪文件。
+每批先做本地检查，再让受限 Pi 审查完整文件与 diff 的敏感性；不确定则阻止推送。
+这是保守筛选，不是任意自然语言的隐私保证。新增文件必须先交互审阅并首次提交。
+有已暂存改动、未知本地提交、远端领先、分叉、远端变化或超出审查大小时停止；
+不会自动 pull/rebase、覆盖用户改动或 force-push。失败推送只重试本运行器已验证的提交。
+
+任务名为 `PersonalBrain-Pi-Daily` 和 `PersonalBrain-Pi-Weekly`，无七天到期限制。
+锁屏、关闭 Pi 不影响；需要本机保持登录和联网，关机/注销时无法执行，恢复后尝试补跑。
+结果与日志位于 `.local/pi_daily_result.json`、`pi_weekly_result.json` 和对应 `.log`。
+用 `Get-ScheduledTaskInfo` 核对退出码，失败应本地检查，不能把 State=Ready 当作成功。
+
+## 原 Copilot 后台方案（保留，非当前执行器）
+
 使用 Windows Task Scheduler 调用 `run.ps1`，不依赖打开的 Copilot 聊天。
 原会话内 schedules 仅适合临时提醒，不作为每日/每周后台运行器。
 

@@ -1,3 +1,4 @@
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
@@ -25,7 +26,7 @@ class HistoryTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / "AGENTS.md").write_text("Fixture", encoding="utf-8")
         self.source = self.root / "history-source.db"
-        with sqlite3.connect(self.source) as db:
+        with closing(sqlite3.connect(self.source)) as db, db:
             db.executescript("""
                 CREATE TABLE sessions(id TEXT PRIMARY KEY,repository TEXT);
                 CREATE TABLE turns(id INTEGER PRIMARY KEY,session_id TEXT,turn_index INTEGER,
@@ -42,7 +43,7 @@ class HistoryTests(unittest.TestCase):
              message="PRIVATE_RAW_SENTINEL", assistant="UNVERIFIED_ASSISTANT_SENTINEL",
              age=1, stamp=None):
         stamp = stamp or (datetime.now(timezone.utc) - timedelta(days=age)).isoformat()
-        with sqlite3.connect(self.source) as db:
+        with closing(sqlite3.connect(self.source)) as db, db:
             db.execute("INSERT OR IGNORE INTO sessions VALUES (?,?)", (session, repository))
             db.execute("INSERT INTO turns(session_id,turn_index,user_message,assistant_response,timestamp)"
                        " VALUES (?,?,?,?,?)", (session, index, message, assistant, stamp))
@@ -120,7 +121,7 @@ class HistoryTests(unittest.TestCase):
         for index in range(5):
             self.turn(index=index)
         history.collect(self.store, 2)
-        with sqlite3.connect(self.source) as db:
+        with closing(sqlite3.connect(self.source)) as db, db:
             db.execute("DELETE FROM turns")
         self.turn(session="replacement")
         self.assertEqual(history.collect(self.store)["queued"], 1)
@@ -131,7 +132,7 @@ class HistoryTests(unittest.TestCase):
         self.turn(index=1, age=0)
         history.collect(self.store)
         old = self.refs()[0]["id"]
-        with sqlite3.connect(self.source) as db:
+        with closing(sqlite3.connect(self.source)) as db, db:
             db.execute("UPDATE turns SET assistant_response='Completed response' WHERE turn_index=0")
             db.execute("UPDATE turns SET timestamp=? WHERE turn_index=1",
                        ((datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),))
@@ -171,7 +172,7 @@ class HistoryTests(unittest.TestCase):
                       (self.store.local / "HISTORY_QUEUE.md").read_text(encoding="utf-8"))
 
     def test_schema_failure_is_visible_and_does_not_advance(self):
-        with sqlite3.connect(self.source) as db:
+        with closing(sqlite3.connect(self.source)) as db, db:
             db.execute("ALTER TABLE turns RENAME COLUMN user_message TO changed")
         with self.assertRaisesRegex(ValueError, "Unsupported Copilot"):
             history.collect(self.store)
@@ -225,7 +226,7 @@ class HistoryTests(unittest.TestCase):
         self.turn()
         history.collect(self.store)
         key = self.refs()[0]["id"]
-        with sqlite3.connect(self.source) as db:
+        with closing(sqlite3.connect(self.source)) as db, db:
             db.execute("UPDATE turns SET user_message='Revised instruction'")
         with self.assertRaisesRegex(ValueError, "missing, changed or outside scope"):
             history.resolve(self.store, key, "distilled", observation(), confirmed=True)
