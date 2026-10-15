@@ -1,0 +1,5 @@
+{
+  "recurringMaxAgeMs": 0,
+  "recurringJitterFrac": 0,
+  "recurringJitterCapMs": 0
+}
