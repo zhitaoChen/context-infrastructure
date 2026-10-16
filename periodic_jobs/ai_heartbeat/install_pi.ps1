@@ -38,7 +38,7 @@ New-Item -ItemType Directory -Path $local -Force | Out-Null
 } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $local 'pi_runtime.json') -Encoding utf8
 $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) `
     -LogonType Interactive -RunLevel Limited
-$triggers = @((New-ScheduledTaskTrigger -Daily -At '00:00'),
+$triggers = @((New-ScheduledTaskTrigger -Daily -At '23:00'),
               (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At '23:30'))
 for ($i = 0; $i -lt $names.Count; $i++) {
     $kind = @('daily', 'weekly')[$i]
