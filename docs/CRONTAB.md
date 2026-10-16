@@ -3,7 +3,8 @@
 ## Pi 后台方案（当前选择）
 
 使用 Windows Task Scheduler，不依赖打开的 Pi 会话，也不使用 Copilot CLI。
-每日 00:00 分类已主动采集的非敏感候选，然后检查公开文件，有合格改动才 commit/push；
+每日 00:00 读取已授权本机对话 → 局部脱敏 → Pi 提炼经验 → 分类候选，
+然后检查公开文件，有合格改动才 commit/push；
 周日 23:30 比较已接受观察并生成本机待审草稿，不自动应用到 rules。
 当前机器的安装状态以 `Get-ScheduledTask` 为准，旧交接快照不是实时证据。
 
@@ -12,12 +13,34 @@
 Get-ScheduledTask -TaskName 'PersonalBrain-Pi-Daily','PersonalBrain-Pi-Weekly'
 Start-ScheduledTask -TaskName 'PersonalBrain-Pi-Daily'
 python .\tools\brain\pi_schedule.py --kind daily --dry-run
+# 单独确认本机全部历史的局部脱敏提炼后，首次执行：
+python .\tools\brain\conversation_daily.py configure --confirmed
+python .\tools\brain\conversation_daily.py status
+# 停用：python .\tools\brain\conversation_daily.py disable
 ```
 
 配置位于 Git 忽略的 `.local/pi_runtime.json`，只记录运行路径和模型标识，不复制密钥。
 Pi 复用已有本机认证，模型禁用工具、扩展、MCP、上下文加载与会话持久化。
-不会启用或扫描历史来源；Pi/Claude/Codex 原文仍保留待审，不批量发送给模型。
-无输入则跳过模型，不制造每日观察或周度提案。
+历史总结需单独授权，配置位于 `.local/conversation_daily.json`，不因安装调度器自动开启。
+当前用户已授权本机历史回补与后续每日提炼，覆盖可访问的 Pi、Copilot，以及标准目录中
+存在的 Claude Code/Codex 历史；不存在的来源明确报告 `not_found`，不是已接通。
+Copilot 包括无 repository 标签的本机会话；Pi 按树形父节点匹配助手正文，不串分支。
+不涵盖其他设备、云端、未导出的网页聊天、未知格式或未指定的自定义目录。
+
+用户消息与助手正文先本地脱敏，凭据、代码块、联系方式、路径和疑似敏感句段替换为
+placeholder，不因一段敏感内容丢弃整条 query。长对话分块处理，不静默截断；
+原始文本只在内存中读取，引用队列仅保存来源/节点/哈希，不保存脱敏映射或聊天原文。
+不提取模型推理、工具输出或图片；助手自称成功不是验证证据。
+局部规则脱敏不能保证识别任意自然语言里的所有私人信息，不能宣称数学上的零泄漏。
+
+每日最多 8 批、每批最多 16 个片段，积压保留到后续，重复版本不重复消费；
+模型失败不消费该批，来源在推理期间变化则停止并重新采集。
+每日分类每轮最多 32 条候选，其余留到次日；模型调用最坏预算按安装器预留，
+每日任务时限为 19 次单次超时加 30 分钟本地处理时间。
+本地输出校验拦下的候选保留 `needs_review`，不为清空积压放宽边界。
+摘要仅包含非敏感、可复用的方法；没有合格内容时不制造经验。
+结果中的 `conversation.coverage`、`processed`、`remaining` 用于核对覆盖和积压。
+旧 `history.py`/`observer.py` 的保护性模式仍保留，不会自动解除旧待审引用的限制。
 
 自动推送仅涵盖本仓库已跟踪的规则、文档、基础设施脚本等明确路径，
 不包含 `.local`、contexts 原文、USER.local、凭据、日志、archive 或未跟踪文件。

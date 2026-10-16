@@ -40,6 +40,15 @@
 `.local` 已被 Git 忽略。Markdown 是可重建视图，不直接编辑。
 上述直接采集依赖 Agent 主动执行，不是强制 session-end hook。
 
+## Pi 每日对话提炼（已授权的局部脱敏模式）
+
+Pi runner 可通过 `.local/conversation_daily.json` 显式启用本机历史回补与每日提炼。
+结合用户消息及助手正文，用 placeholder 替换敏感句段，保留其余 query；
+长文本分块，不读取推理、工具输出或图片。原文与脱敏映射不写入记忆库或 Git。
+助手自称完成不算验证依据；只保留非敏感可复用抽象，周度草稿仍需审阅。
+范围、积压与限制见 [CRONTAB.md](../../docs/CRONTAB.md)。
+下方旧采集器的默认保护性模式保持不变，不等于已经授权外发原文。
+
 ## 本地 Agent 历史引用与定时提炼
 
 可选择启用本地历史采集器，定时只读扫描获准的 Copilot、Claude Code 和 Codex

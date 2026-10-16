@@ -42,8 +42,10 @@ $triggers = @((New-ScheduledTaskTrigger -Daily -At '00:00'),
               (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At '23:30'))
 for ($i = 0; $i -lt $names.Count; $i++) {
     $kind = @('daily', 'weekly')[$i]
+    # Daily: 8 conversation batches x 2 validation attempts + classifier x2 + publication.
+    $modelCalls = if ($kind -eq 'daily') { 19 } else { 2 }
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
-        -ExecutionTimeLimit (New-TimeSpan -Seconds (3 * $TimeoutSeconds + 600)) `
+        -ExecutionTimeLimit (New-TimeSpan -Seconds ($modelCalls * $TimeoutSeconds + 1800)) `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
     $arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -File "{0}" -Kind {1}' -f `
         (Join-Path $PSScriptRoot 'run_pi.ps1'), $kind

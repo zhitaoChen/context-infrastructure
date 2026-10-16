@@ -7,7 +7,8 @@ import subprocess
 import memory
 
 TEMPLATES = {"daily": "daily_observer.md", "weekly": "weekly_reflector.md",
-             "observer": "history_observer.md", "publication": "publication_review.md"}
+             "observer": "history_observer.md", "publication": "publication_review.md",
+             "conversation": "conversation_observer.md"}
 
 
 def parse_output(text):
@@ -48,6 +49,8 @@ def call_pi(store, kind, rows):
     template = store.root / "periodic_jobs/ai_heartbeat/prompts" / TEMPLATES[kind]
     if kind == "publication":
         inputs = rows
+    elif kind == "conversation":
+        inputs = [{key: row[key] for key in ("id", "source", "messages")} for row in rows]
     else:
         fields = ("id", "source", "request") if kind == "observer" else (
             "id", "source", "observation", "evidence")

@@ -144,7 +144,7 @@ def iter_jsonl(roots, pattern):
     return sorted(files)
 
 
-def claude_rows(roots):
+def claude_rows(roots, include_assistant=False):
     for path in iter_jsonl(roots, "*.jsonl"):
         if "subagents" in path.parts:
             continue
@@ -161,16 +161,24 @@ def claude_rows(roots):
                     continue
                 session_id = event.get("sessionId") or session_id
                 cwd = event.get("cwd") or cwd
+                if event.get("type") == "assistant" and include_assistant and rows:
+                    reply = extract_text((event.get("message") or {}).get("content"))
+                    rows[-1][2].append(reply)
+                    continue
                 if event.get("type") != "user":
                     continue
                 text = extract_text((event.get("message") or {}).get("content"))
                 stamp = utc_time(event.get("timestamp"))
                 if (text and stamp
                         and not text.lstrip().lower().startswith(GENERATED_CLAUDE_PREFIXES)):
-                    rows.append((text, stamp))
+                    rows.append((text, stamp, []))
         if isinstance(session_id, str) and SESSION_ID.fullmatch(session_id):
-            for index, (text, stamp) in enumerate(rows):
-                yield make_row("claude", session_id, index, stamp, text, cwd)
+            for index, (text, stamp, replies) in enumerate(rows):
+                row = make_row("claude", session_id, index, stamp, text, cwd)
+                if include_assistant:
+                    row["assistant_response"] = "\n\n".join(replies)
+                    row["content_digest"] = digest([text, row["assistant_response"]])
+                yield row
 
 
 def codex_item_text(item):
@@ -185,7 +193,7 @@ def codex_item_text(item):
     return "\n".join(parts)
 
 
-def codex_rows(roots):
+def codex_rows(roots, include_assistant=False):
     for path in iter_jsonl(roots, "rollout-*.jsonl"):
         rows = []
         session_id = ""
@@ -212,6 +220,9 @@ def codex_rows(roots):
                 if event_type != "event_msg":
                     continue
                 payload_type = payload.get("type")
+                if payload_type == "agent_message" and include_assistant and rows:
+                    rows[-1][2].append(str(payload.get("message") or ""))
+                    continue
                 if payload_type == "user_message":
                     text = str(payload.get("message") or "").strip()
                 elif payload_type == "item_completed":
@@ -221,10 +232,14 @@ def codex_rows(roots):
                     text = ""
                 stamp = utc_time(event.get("timestamp"))
                 if text and stamp:
-                    rows.append((text, stamp))
+                    rows.append((text, stamp, []))
         if SESSION_ID.fullmatch(session_id):
-            for index, (text, stamp) in enumerate(rows):
-                yield make_row("codex", session_id, index, stamp, text, cwd)
+            for index, (text, stamp, replies) in enumerate(rows):
+                row = make_row("codex", session_id, index, stamp, text, cwd)
+                if include_assistant:
+                    row["assistant_response"] = "\n\n".join(replies)
+                    row["content_digest"] = digest([text, row["assistant_response"]])
+                yield row
 
 
 def make_row(source, session_id, index, stamp, text, cwd):
@@ -240,13 +255,15 @@ def make_row(source, session_id, index, stamp, text, cwd):
     }
 
 
-def pi_rows(roots):
+def pi_rows(roots, include_assistant=False):
     identities = {}
     for path in iter_jsonl(roots, "*.jsonl"):
         if "subagents" in path.parts:
             continue
         header = None
         indexes = {}
+        nodes = {}
+        collected = []
         with path.open("r", encoding="utf-8-sig") as stream:
             for line in stream:
                 if not line.strip():
@@ -273,6 +290,9 @@ def pi_rows(roots):
                     continue
                 if event.get("type") == "session":
                     raise ValueError("Duplicate pi session header")
+                node_id = event.get("id")
+                if isinstance(node_id, str):
+                    nodes[node_id] = event
                 if event.get("type") != "message":
                     continue
                 message = event.get("message")
@@ -298,6 +318,9 @@ def pi_rows(roots):
                     raise ValueError("pi entry index collision; no references consumed")
                 indexes[turn_index] = entry
                 row = make_row("pi", header["id"], turn_index, stamp, user_text, header["cwd"])
+                if include_assistant:
+                    collected.append((entry, row))
+                    continue
                 identity = (header["id"], entry)
                 previous = identities.get(identity)
                 signature = (row["content_digest"], row["timestamp"], row["cwd"])
@@ -307,15 +330,43 @@ def pi_rows(roots):
                     continue
                 identities[identity] = signature
                 yield row
+        if include_assistant:
+            replies = {entry: [] for entry, _ in collected}
+            for event in nodes.values():
+                message = event.get("message", {})
+                if (event.get("type") != "message" or message.get("role") != "assistant"
+                        or message.get("stopReason") not in (None, "stop", "toolUse")):
+                    continue
+                parent = event.get("parentId")
+                visited = set()
+                while parent in nodes and parent not in visited:
+                    visited.add(parent)
+                    if parent in replies:
+                        replies[parent].append(extract_text(message.get("content")))
+                        break
+                    if nodes[parent].get("message", {}).get("role") == "user":
+                        break
+                    parent = nodes[parent].get("parentId")
+            for entry, row in collected:
+                row["assistant_response"] = "\n\n".join(replies[entry])
+                row["content_digest"] = digest([row["user_message"], row["assistant_response"]])
+                identity = (header["id"], entry)
+                signature = (row["content_digest"], row["timestamp"], row["cwd"])
+                if identity in identities:
+                    if identities[identity] != signature:
+                        raise ValueError("Conflicting copies of a pi conversation")
+                    continue
+                identities[identity] = signature
+                yield row
 
 
-def scan_rows(config):
+def scan_rows(config, include_assistant=False):
     rows = []
     readers = {"claude": claude_rows, "codex": codex_rows, "pi": pi_rows}
     for source, roots in config["sources"].items():
         if source not in readers:
             raise ValueError("Unsupported agent history source")
-        rows.extend(readers[source](roots))
+        rows.extend(readers[source](roots, include_assistant=include_assistant))
     rows.sort(key=lambda row: (row["timestamp"], row["source"],
                                row["session_id"], row["turn_index"]))
     return rows

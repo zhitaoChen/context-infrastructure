@@ -258,7 +258,9 @@ class Store:
                             "agent_history_configured":
                                 (self.local / "agent_history.json").is_file(),
                             "counts": history_counts,
-                            "observer_configured": (self.local / "observer.json").is_file()},
+                            "observer_configured": (self.local / "observer.json").is_file(),
+                            "conversation_configured":
+                                (self.local / "conversation_daily.json").is_file()},
                 "semantic_search": semantic_status(self.root)}
 
     def resolve_review(self, key, state, note, confirmed):

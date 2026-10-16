@@ -10,6 +10,7 @@ import sys
 
 import memory
 import pi_runtime
+import conversation_daily
 
 ROOT_FILES = {"AGENTS.md", "README.md", "setup_guide.md", ".gitignore",
               ".pi-loop.config.json", "pyrightconfig.json"}
@@ -147,8 +148,11 @@ def run(store, kind, dry_run=False):
     with memory.worker_lock(store.local / "pi_scheduler"):
         if dry_run:
             return {"publication": sync_public(store, config, dry_run=True)}
-        # Do not scan histories or turn on previously unconfigured collection.
-        result = {"memory": memory.run_worker(store, kind, model=pi_runtime.call_pi)}
+        # Only explicitly configured sources may enter the redacted distillation pipeline.
+        result = {}
+        if kind == "daily":
+            result["conversation"] = conversation_daily.run(store, pi_runtime.call_pi)
+        result["memory"] = memory.run_worker(store, kind, model=pi_runtime.call_pi)
         if kind == "daily":
             result["publication"] = sync_public(store, config)
         memory.atomic_write(store.local / f"pi_{kind}_result.json",
