@@ -56,6 +56,16 @@ def review_publication(store, rows, model=pi_runtime.call_pi):
         raise ValueError("Publication review omitted files")
 
 
+def push_validated(root, branch, commit, base):
+    # Re-fetch immediately before every push, including retries. A remote race
+    # must preserve the reviewed local commit, never trigger rebase/force-push.
+    git(root, "fetch", "origin", f"refs/heads/{branch}")
+    latest = git(root, "rev-parse", "FETCH_HEAD").decode().strip()
+    if latest != base:
+        raise RuntimeError("Publication blocked: remote advanced before push; reconcile on current branch")
+    git(root, "push", "origin", f"{commit}:refs/heads/{branch}")
+
+
 def sync_public(store, config, dry_run=False, model=pi_runtime.call_pi):
     root = store.root
     branch = config["branch"]
@@ -76,7 +86,7 @@ def sync_public(store, config, dry_run=False, model=pi_runtime.call_pi):
                 or state.get("validated") is not True):
             raise RuntimeError("Publication blocked: local/remote history differs; reconcile manually")
         if not dry_run:
-            git(root, "push", "origin", f"{head}:refs/heads/{branch}")
+            push_validated(root, branch, head, remote_head)
             memory.atomic_write(state_path, json.dumps({"last_pushed": head}))
         return {"state": "retry_pending" if dry_run else "pushed", "commit": head}
     names = git(root, "diff", "--name-only", "-z", "HEAD").decode("utf-8").split("\0")
@@ -138,7 +148,7 @@ def sync_public(store, config, dry_run=False, model=pi_runtime.call_pi):
             raise RuntimeError("Publication blocked: committed content differs from reviewed snapshot")
     memory.atomic_write(state_path, json.dumps({"pending_commit": committed, "base": head,
                                                "validated": True}))
-    git(root, "push", "origin", f"{committed}:refs/heads/{branch}")
+    push_validated(root, branch, committed, head)
     memory.atomic_write(state_path, json.dumps({"last_pushed": committed}))
     return {"state": "pushed", "commit": committed, "paths": paths}
 

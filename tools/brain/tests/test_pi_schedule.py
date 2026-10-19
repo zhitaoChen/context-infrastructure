@@ -114,6 +114,40 @@ class GitTests(unittest.TestCase):
                          self.git("ls-remote", "origin", "refs/heads/main").split()[0])
         self.assertEqual(pi_schedule.sync_public(self.store, self.config)["state"], "skipped")
 
+    def test_every_push_has_fresh_fetch(self):
+        (self.root / "AGENTS.md").write_text("reviewed public update")
+        original = pi_schedule.git
+        calls = []
+        def trace(root, *args, **kwargs):
+            calls.append(args[0])
+            return original(root, *args, **kwargs)
+        with mock.patch.object(pi_schedule, "git", side_effect=trace):
+            pi_schedule.sync_public(self.store, self.config, model=self.approve)
+        position = calls.index("push")
+        self.assertEqual(calls[position - 2:position], ["fetch", "rev-parse"])
+
+    def test_remote_advance_during_review_preserves_commit(self):
+        (self.root / "AGENTS.md").write_text("review me")
+        original = pi_schedule.git
+        fetches = 0
+        pushed = False
+        def race(root, *args, **kwargs):
+            nonlocal fetches, pushed
+            if args[0] == "fetch":
+                fetches += 1
+            if args == ("rev-parse", "FETCH_HEAD") and fetches >= 2:
+                return b"different-remote-head\n"
+            if args[0] == "push":
+                pushed = True
+            return original(root, *args, **kwargs)
+        with mock.patch.object(pi_schedule, "git", side_effect=race):
+            with self.assertRaisesRegex(RuntimeError, "remote advanced"):
+                pi_schedule.sync_public(self.store, self.config, model=self.approve)
+        self.assertFalse(pushed)
+        state = json.loads((self.store.local / "pi_publication.json").read_text())
+        self.assertTrue(state["validated"])
+        self.assertEqual(state["pending_commit"], self.git("rev-parse", "HEAD").decode().strip())
+
     def test_deleted_tracked_file(self):
         (self.root / "AGENTS.md").unlink()
         result = pi_schedule.sync_public(self.store, self.config, model=self.approve)
