@@ -42,8 +42,8 @@ $triggers = @((New-ScheduledTaskTrigger -Daily -At '23:00'),
               (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At '23:30'))
 for ($i = 0; $i -lt $names.Count; $i++) {
     $kind = @('daily', 'weekly')[$i]
-    # Daily: 8 conversation batches x 2 validation attempts + classifier x2 + publication.
-    $modelCalls = if ($kind -eq 'daily') { 19 } else { 2 }
+    # Daily: conversation x16 + classifier x2 + synthesis x2 + gate + publication.
+    $modelCalls = if ($kind -eq 'daily') { 22 } else { 6 }
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
         -ExecutionTimeLimit (New-TimeSpan -Seconds ($modelCalls * $TimeoutSeconds + 1800)) `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries

@@ -11,6 +11,7 @@ import sys
 import memory
 import pi_runtime
 import conversation_daily
+import knowledge_publication
 
 ROOT_FILES = {"AGENTS.md", "README.md", "setup_guide.md", ".gitignore",
               ".pi-loop.config.json", "pyrightconfig.json"}
@@ -56,7 +57,7 @@ def review_publication(store, rows, model=pi_runtime.call_pi):
         raise ValueError("Publication review omitted files")
 
 
-def sync_public(store, config, dry_run=False, model=pi_runtime.call_pi):
+def sync_public(store, config, dry_run=False, model=pi_runtime.call_pi, generated=None):
     root = store.root
     branch = config["branch"]
     if git(root, "branch", "--show-current").decode().strip() != branch:
@@ -81,7 +82,19 @@ def sync_public(store, config, dry_run=False, model=pi_runtime.call_pi):
         return {"state": "retry_pending" if dry_run else "pushed", "commit": head}
     names = git(root, "diff", "--name-only", "-z", "HEAD").decode("utf-8").split("\0")
     paths = [path for path in names if path and allowed_path(path)]
-    # Untracked files deliberately require an interactive review/initial commit.
+    # Only exact, gated, content-hash-bound knowledge artifacts may be new files.
+    generated = generated or {}
+    for path, expected_digest in generated.items():
+        if not knowledge_publication.PATH_PATTERN.fullmatch(path):
+            raise ValueError("Invalid generated knowledge path")
+        target = root / path
+        if target.is_symlink() or not target.is_file() or any(
+                p.is_symlink() for p in (target.parent, target.parent.parent)):
+            raise RuntimeError("Generated knowledge must be a regular file")
+        if hashlib.sha256(target.read_bytes()).hexdigest() != expected_digest:
+            raise RuntimeError("Generated knowledge changed after validation")
+        if not git(root, "ls-files", "--", path) and path not in paths:
+            paths.append(path)
     if not paths:
         return {"state": "skipped", "reason": "No eligible tracked changes"}
     rows = []
@@ -90,7 +103,9 @@ def sync_public(store, config, dry_run=False, model=pi_runtime.call_pi):
     for path in paths:
         target = root / path
         entry = git(root, "ls-files", "-s", "--", path).decode()
-        if not entry.startswith("100644 ") and not entry.startswith("100755 "):
+        if (not entry and path in generated):
+            pass
+        elif not entry.startswith("100644 ") and not entry.startswith("100755 "):
             raise RuntimeError("Publication blocked: symlink, submodule or nonregular file")
         if target.is_symlink() or (target.exists() and not target.is_file()):
             raise RuntimeError("Publication blocked: nonregular working file")
@@ -122,7 +137,10 @@ def sync_public(store, config, dry_run=False, model=pi_runtime.call_pi):
     if git(root, "diff", "--cached", "--name-only", "-z"):
         raise RuntimeError("Publication blocked: index changed during review")
     # --only excludes other staged files; never git add -A / force-push / auto-rebase.
-    git(root, "commit", "--only", "-m", f"chore(brain): daily public sync {memory.now()[:10]}",
+    new_paths = [path for path in paths if not git(root, "ls-files", "--", path)]
+    if new_paths:
+        git(root, "add", "-N", "--", *new_paths)
+    git(root, "commit", "--only", "-m", f"chore(brain): public knowledge sync {memory.now()[:10]}",
         "--", *paths)
     committed = git(root, "rev-parse", "HEAD").decode().strip()
     memory.atomic_write(state_path, json.dumps({"pending_commit": committed, "base": head}))
@@ -153,8 +171,10 @@ def run(store, kind, dry_run=False):
         if kind == "daily":
             result["conversation"] = conversation_daily.run(store, pi_runtime.call_pi)
         result["memory"] = memory.run_worker(store, kind, model=pi_runtime.call_pi)
-        if kind == "daily":
-            result["publication"] = sync_public(store, config)
+        result["knowledge"], _ = knowledge_publication.export(
+            store, kind, pi_runtime.call_pi, review_publication)
+        result["publication"] = sync_public(
+            store, config, generated=knowledge_publication.pending_artifacts(store))
         memory.atomic_write(store.local / f"pi_{kind}_result.json",
                             json.dumps({"finished": memory.now(), **result}, ensure_ascii=False, indent=2))
         return result
