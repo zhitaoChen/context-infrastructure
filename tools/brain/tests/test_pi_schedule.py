@@ -175,6 +175,30 @@ class GitTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "remote changed"):
             pi_schedule.sync_public(self.store, self.config)
 
+    def test_generated_knowledge_is_pushed_but_other_untracked_files_are_not(self):
+        import hashlib
+        path = "docs/knowledge/daily_" + "a" * 20 + ".md"
+        target = self.root / path
+        target.parent.mkdir(parents=True)
+        target.write_text("Public abstract method\n", encoding="utf-8")
+        (self.root / "private.md").write_text("private")
+        generated = {path: hashlib.sha256(target.read_bytes()).hexdigest()}
+        result = pi_schedule.sync_public(self.store, self.config, model=self.approve, generated=generated)
+        self.assertEqual(result["state"], "pushed")
+        self.assertEqual(result["paths"], [path])
+        self.assertEqual(self.git("ls-tree", "HEAD", "--", "private.md"), b"")
+
+    def test_generated_path_and_content_fail_closed(self):
+        with self.assertRaises(ValueError):
+            pi_schedule.sync_public(self.store, self.config, model=self.approve,
+                                    generated={"docs/other.md": "digest"})
+        path = "docs/knowledge/daily_" + "b" * 20 + ".md"
+        target = self.root / path
+        target.parent.mkdir(parents=True)
+        target.write_text("modified")
+        with self.assertRaisesRegex(RuntimeError, "changed after validation"):
+            pi_schedule.sync_public(self.store, self.config, model=self.approve, generated={path: "wrong"})
+
     def test_untracked_and_staged(self):
         (self.root / "private.md").write_text("do not publish")
         self.assertEqual(pi_schedule.sync_public(self.store, self.config)["state"], "skipped")
