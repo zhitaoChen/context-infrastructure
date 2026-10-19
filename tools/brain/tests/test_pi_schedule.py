@@ -77,6 +77,26 @@ class PiTests(unittest.TestCase):
                 stop.assert_called_once_with(process)
 
 
+class MaintenanceBoundaryTests(unittest.TestCase):
+    def test_pending_review_is_reported_not_disguised_as_public_document(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "AGENTS.md").write_text("fixture")
+            store = memory.Store(root)
+            with store.connection() as db:
+                db.execute("INSERT INTO reviews(id,created,payload) VALUES (?,?,?)",
+                           ("pending-review", memory.now(), json.dumps({"proposals": [{"title": "method"}]})))
+            with mock.patch.object(pi_runtime, "load_config", return_value={}), \
+                    mock.patch.object(pi_schedule.conversation_daily, "run", return_value={"state": "skipped"}), \
+                    mock.patch.object(memory, "run_worker", return_value={"state": "skipped"}), \
+                    mock.patch.object(pi_schedule, "sync_public", return_value={"state": "skipped"}):
+                result = pi_schedule.run(store, "daily")
+            self.assertEqual(result["promotion"]["state"], "needs_review")
+            self.assertEqual(result["promotion"]["pending_reviews"], ["pending-review"])
+            self.assertNotIn("knowledge", result)
+            self.assertFalse((root / "docs/knowledge").exists())
+
+
 class GitTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -175,29 +195,13 @@ class GitTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "remote changed"):
             pi_schedule.sync_public(self.store, self.config)
 
-    def test_generated_knowledge_is_pushed_but_other_untracked_files_are_not(self):
-        import hashlib
-        path = "docs/knowledge/daily_" + "a" * 20 + ".md"
-        target = self.root / path
-        target.parent.mkdir(parents=True)
-        target.write_text("Public abstract method\n", encoding="utf-8")
-        (self.root / "private.md").write_text("private")
-        generated = {path: hashlib.sha256(target.read_bytes()).hexdigest()}
-        result = pi_schedule.sync_public(self.store, self.config, model=self.approve, generated=generated)
-        self.assertEqual(result["state"], "pushed")
-        self.assertEqual(result["paths"], [path])
-        self.assertEqual(self.git("ls-tree", "HEAD", "--", "private.md"), b"")
-
-    def test_generated_path_and_content_fail_closed(self):
-        with self.assertRaises(ValueError):
-            pi_schedule.sync_public(self.store, self.config, model=self.approve,
-                                    generated={"docs/other.md": "digest"})
-        path = "docs/knowledge/daily_" + "b" * 20 + ".md"
-        target = self.root / path
-        target.parent.mkdir(parents=True)
-        target.write_text("modified")
-        with self.assertRaisesRegex(RuntimeError, "changed after validation"):
-            pi_schedule.sync_public(self.store, self.config, model=self.approve, generated={path: "wrong"})
+    def test_unreviewed_knowledge_report_is_not_automatically_published(self):
+        path = self.root / "docs/knowledge/daily_unreviewed.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("Unreviewed generated report")
+        result = pi_schedule.sync_public(self.store, self.config, model=self.approve)
+        self.assertEqual(result["state"], "skipped")
+        self.assertEqual(self.git("ls-tree", "HEAD", "--", "docs/knowledge"), b"")
 
     def test_untracked_and_staged(self):
         (self.root / "private.md").write_text("do not publish")

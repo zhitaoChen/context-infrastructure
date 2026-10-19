@@ -1,5 +1,13 @@
 # 工作流记忆运行约定
 
+## 阶段边界
+
+采集 → 每日筛选 → 每周综合 → 有上下文的审阅归位 → 验证与Git同步。
+accepted 不是正式规则，review 不是已应用；需实际比较、合并 skills／axioms，
+再记录 applied／dismissed。独立 knowledge 以长期主题组织，不按天批量发布总结。
+当前 Pi 执行方式见 `docs/CRONTAB.md`，完整目标见 README。
+本页下方仍保留旧 Copilot 事务 worker 的运行约定，不代表所有机器使用同一调度器。
+
 当前执行程序：`tools\brain\history.py`、`observer.py` 与 `memory.py`，仅使用 Python 标准库。
 计划任务入口：`periodic_jobs\ai_heartbeat\run.ps1`。
 
