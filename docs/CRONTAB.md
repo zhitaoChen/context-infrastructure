@@ -1,6 +1,19 @@
 # Windows 自动记忆计划
 
-## Pi 后台方案（当前选择）
+## 当前选择：Pi 会话内维护
+
+本机已改用单一持久会话任务，每天北京时间23:00触发；周日同一流程先日整理、再周综合，
+缺少到期周记录时补跑。执行规约见 `periodic_jobs/ai_heartbeat/prompts/pi_maintenance.md`。
+运行过程、修改与结果在承载任务的 Pi 会话可见，不再通过隐藏后台模型进程执行。
+在 Pi 中使用 `/loop-list` 或 `cron_list` 查看，不在 Windows 任务列表里寻找会话任务。
+
+本机 `PersonalBrain-Pi-Daily`／`PersonalBrain-Pi-Weekly` 已停用而非删除，避免重复处理。
+`.pi-loop.json` 和锁文件仅为本机注册状态，Git忽略；`.pi-loop.config.json` 关闭7天到期和随机延迟。
+必须保持本仓库的 Pi 会话运行；忙碌时延后至空闲，退出、关机时不能执行，
+重新打开后恢复持久任务，但不能把错过的每日触发当作已补跑。
+同目录多会话由锁选一个承载者，不保证在所有聊天同时显示。
+
+## Pi Windows 后台方案（可选，当前本机已停用）
 
 使用 Windows Task Scheduler，不依赖打开的 Pi 会话，也不使用 Copilot CLI。
 每日北京时间 23:00 读取已授权本机对话 → 局部脱敏 → Pi 提炼经验 → 分类候选，

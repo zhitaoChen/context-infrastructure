@@ -9,3 +9,5 @@ __pycache__/
 contexts/memory/.local/
 integrations/copilot/dist/
 rules/USER.local.md
+.pi-loop.json
+.pi-loop.json.lock
