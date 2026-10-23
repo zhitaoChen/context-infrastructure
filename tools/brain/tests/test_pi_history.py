@@ -147,6 +147,29 @@ class PiHistoryTests(unittest.TestCase):
         self.assertEqual(result["queued"], 1)
         self.assertEqual(result["superseded"], 1)
 
+    def test_recognized_child_export_is_excluded_with_notice(self):
+        self.write([user()])
+        export = {"version": 1, "recordType": "message", "source": "async",
+                  "sourceEventType": "initial_prompt", "role": "user", "runId": "run-fixture",
+                  "agent": "scout", "childIndex": 0,
+                  "message": {"role": "user", "content": "CHILD_NOT_USER_EVIDENCE"}}
+        (self.sessions / "fixture_scout_transcript.jsonl").write_text(
+            json.dumps(export) + "\n", encoding="utf-8")
+        for include in (False, True):
+            with self.assertWarnsRegex(RuntimeWarning, "recognized pi-subagents"):
+                rows = list(agent_history.pi_rows([str(self.sessions)], include_assistant=include))
+            self.assertEqual(len(rows), 1)
+            self.assertNotIn("CHILD_NOT_USER_EVIDENCE", str(rows))
+
+    def test_unknown_export_and_native_version_are_not_silently_skipped(self):
+        for event in ({"version": 1, "recordType": "message"},
+                      {"type": "session", "version": 4, "id": "future", "cwd": "fixture"}):
+            path = self.sessions / "unknown_transcript.jsonl"
+            path.write_text(json.dumps(event) + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Unsupported pi session"):
+                list(agent_history.pi_rows([str(self.sessions)]))
+            path.unlink()
+
     def test_custom_pi_roots_respect_environment_and_config(self):
         with mock.patch.dict(os.environ, {"PI_CODING_AGENT_DIR": str(self.root / "agent"),
                                          "PI_CODING_AGENT_SESSION_DIR": str(self.sessions)}):

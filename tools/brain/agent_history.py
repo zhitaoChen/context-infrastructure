@@ -10,6 +10,7 @@ import re
 import sqlite3
 import sys
 import uuid
+import warnings
 
 if __package__:
     from . import memory
@@ -255,6 +256,22 @@ def make_row(source, session_id, index, stamp, text, cwd):
     }
 
 
+def is_child_transcript(path, event):
+    """Recognize pi-subagents exports, not unknown native session versions."""
+    return (path.name.endswith("_transcript.jsonl")
+            and type(event.get("version")) is int and event["version"] == 1
+            and event.get("recordType") == "message"
+            and event.get("source") in ("async", "sync")
+            and event.get("sourceEventType") == "initial_prompt"
+            and event.get("role") == "user"
+            and isinstance(event.get("runId"), str) and bool(event["runId"])
+            and isinstance(event.get("agent"), str) and bool(event["agent"])
+            and type(event.get("childIndex")) is int
+            and isinstance(event.get("message"), dict)
+            and event["message"].get("role") == "user"
+            and "type" not in event)
+
+
 def pi_rows(roots, include_assistant=False):
     identities = {}
     for path in iter_jsonl(roots, "*.jsonl"):
@@ -280,6 +297,10 @@ def pi_rows(roots, include_assistant=False):
                 if not isinstance(event, dict):
                     raise ValueError("pi session entry must be an object")
                 if header is None:
+                    if is_child_transcript(path, event):
+                        warnings.warn("Skipped recognized pi-subagents child transcript; not a native user session",
+                                      RuntimeWarning)
+                        break
                     if (event.get("type") != "session"
                             or type(event.get("version")) is not int or event["version"] != 3
                             or not isinstance(event.get("id"), str)
