@@ -48,9 +48,13 @@ def load_config(store):
 
 
 def scan(config):
-    rows = agent_history.scan_rows(config, include_assistant=True)
     coverage = {name: ("available" if any(memory.Path(p).is_dir() for p in roots)
                        else "not_found") for name, roots in config["sources"].items()}
+    # This runtime registers optional standard locations, unlike the strict reference collector.
+    # Preserve authorization and report missing sources without blocking available ones.
+    available = {name: roots for name, roots in config["sources"].items()
+                 if coverage[name] == "available"}
+    rows = agent_history.scan_rows(dict(config, sources=available), include_assistant=True)
     path = memory.Path(config["copilot_database"])
     coverage["copilot"] = "available" if path.is_file() else "not_found"
     if path.is_file():

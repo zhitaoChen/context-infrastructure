@@ -140,6 +140,14 @@ class ConversationTests(unittest.TestCase):
             return result
         self.assertEqual(daily.run(self.store, model)['candidates'], 1)
 
+    def test_optional_missing_source_does_not_block_available_history(self):
+        self.write()
+        self.config['sources']['claude'] = [str(self.root / 'missing-claude')]
+        rows, coverage = daily.scan(self.config)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(coverage['pi'], 'available')
+        self.assertEqual(coverage['claude'], 'not_found')
+
     def test_nonrepository_copilot_session_included(self):
         from contextlib import closing
         import sqlite3
