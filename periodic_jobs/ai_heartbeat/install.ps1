@@ -14,6 +14,10 @@ if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $python)) {
 $pwsh = (Get-Command pwsh -ErrorAction Stop).Source
 $copilot = (Get-Command copilot -ErrorAction Stop).Source
 $gh = (Get-Command gh -ErrorAction Stop).Source
+# npm PowerShell wrappers need Node even in a scheduler/minimal PATH session.
+$nodeDirectory = if ($copilot.EndsWith('.ps1')) {
+    Split-Path -Parent (Get-Command node -ErrorAction Stop).Source
+} else { $null }
 if ([TimeZoneInfo]::Local.Id -notin @('China Standard Time', 'Asia/Shanghai')) {
     throw 'These schedules require Asia/Shanghai (Windows: China Standard Time); system timezone differs.'
 }
@@ -30,6 +34,7 @@ New-Item -ItemType Directory -Path $local -Force | Out-Null
 $config = @{
     python = $python; gh = $gh; gh_user = $GitHubUser; copilot_command = $command
     timeout_seconds = $TimeoutSeconds; max_ai_credits = $null; promotion_mode = 'review'
+    node_directory = $nodeDirectory
 }
 $config | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $local 'config.json') -Encoding utf8
 & $python (Join-Path $root 'tools\brain\memory.py') render
@@ -44,7 +49,7 @@ for ($i = 0; $i -lt $names.Count; $i++) {
     $kind = @('daily', 'weekly')[$i]
     $modelCalls = if ($kind -eq 'daily') { 4 } else { 2 }
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
-        -ExecutionTimeLimit (New-TimeSpan -Seconds ($modelCalls * $TimeoutSeconds + 120)) `
+        -ExecutionTimeLimit (New-TimeSpan -Seconds (2700 + $modelCalls * $TimeoutSeconds + 120)) `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
     $arguments = '-NoProfile -NonInteractive -WindowStyle Hidden -File "{0}" -Kind {1}' -f `
         (Join-Path $PSScriptRoot 'run.ps1'), $kind

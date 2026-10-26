@@ -1,38 +1,54 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('daily', 'weekly')][string]$Kind
+    [Parameter(Mandatory)][ValidateSet('daily', 'weekly')][string]$Kind,
+    [ValidateRange(0, 3600)][int]$QueueTimeoutSeconds = 2700
 )
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $local = Join-Path $root 'contexts\memory\.local'
 $config = Get-Content -LiteralPath (Join-Path $local 'config.json') -Raw | ConvertFrom-Json
 $env:PYTHONIOENCODING = 'utf-8'
+if ($config.node_directory) { $env:PATH = "$($config.node_directory);$env:PATH" }
 $log = Join-Path $local "$Kind.log"
-& $config.python (Join-Path $root 'tools\brain\history.py') --root $root collect 2>&1 |
-    Out-File -LiteralPath $log -Encoding utf8
-$code = $LASTEXITCODE
-if ($code -ne 0) {
-    Write-Error "History collection failed (exit $code). Memory $Kind not started. See $log" -ErrorAction Continue
-    exit $code
-}
-& $config.python (Join-Path $root 'tools\brain\agent_history.py') --root $root collect 2>&1 |
-    Out-File -LiteralPath $log -Encoding utf8 -Append
-$code = $LASTEXITCODE
-if ($code -ne 0) {
-    Write-Error "Agent history collection failed (exit $code). Memory $Kind not started. See $log" -ErrorAction Continue
-    exit $code
-}
-if ($Kind -eq 'daily') {
-    & $config.python (Join-Path $root 'tools\brain\observer.py') --root $root run 2>&1 |
-        Out-File -LiteralPath $log -Encoding utf8 -Append
-    $code = $LASTEXITCODE
-    if ($code -ne 0) {
-        Write-Error "Observer failed (exit $code). Daily classification not started. See $log" -ErrorAction Continue
-        exit $code
+# Scheduler IgnoreNew applies per task, not across Daily and Weekly. Catch-up
+# triggers can start both together. Hold a separate OS-released lock throughout
+# the pipeline; Python commands still retain their transactional worker locks.
+$pipelineLock = $null
+$deadline = [DateTime]::UtcNow.AddSeconds($QueueTimeoutSeconds)
+while ($null -eq $pipelineLock) {
+    try {
+        $pipelineLock = [IO.File]::Open((Join-Path $local 'pipeline.lock'),
+            [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    } catch [IO.IOException] {
+        if ([DateTime]::UtcNow -ge $deadline) {
+            Write-Error 'Another scheduled memory pipeline is still running; queue timeout.' -ErrorAction Continue
+            exit 1
+        }
+        Start-Sleep -Seconds 2
     }
 }
-& $config.python (Join-Path $root 'tools\brain\memory.py') --root $root $Kind 2>&1 |
-    Out-File -LiteralPath $log -Encoding utf8 -Append
-$code = $LASTEXITCODE
-if ($code -ne 0) { Write-Error "Memory $Kind failed (exit $code). See $log" -ErrorAction Continue }
+$code = 0
+try {
+    $commands = @(
+        @{ Script = 'history.py'; Command = 'collect' },
+        @{ Script = 'agent_history.py'; Command = 'collect' }
+    )
+    if ($Kind -eq 'daily') {
+        $commands += @{ Script = 'observer.py'; Command = 'run' }
+    }
+    $commands += @{ Script = 'memory.py'; Command = $Kind }
+    "Started $Kind at $([DateTimeOffset]::Now.ToString('o'))" |
+        Out-File -LiteralPath $log -Encoding utf8
+    foreach ($step in $commands) {
+        & $config.python (Join-Path $root "tools\brain\$($step.Script)") --root $root $step.Command 2>&1 |
+            Out-File -LiteralPath $log -Encoding utf8 -Append
+        $code = $LASTEXITCODE
+        if ($code -ne 0) {
+            Write-Error "$($step.Script) $($step.Command) failed (exit $code). See $log" -ErrorAction Continue
+            break
+        }
+    }
+} finally {
+    $pipelineLock.Dispose()
+}
 exit $code

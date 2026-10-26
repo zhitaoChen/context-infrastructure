@@ -76,3 +76,10 @@ Apple/iOS、媒体、营销、邮件、发布及旧 OpenCode 代码已归档，�
 ```powershell
 python -m unittest discover -s tools\brain\tests -v
 ```
+
+## 多 Agent 用户级入口
+
+`python tools/brain/bootstrap.py` 预览五个 Agent 的全局 brain 入口，
+加 `--apply` 安装；保留既有指令与首次备份，不复制历史原文。
+适用于本机相应 CLI 打开的各 Repo，不保证云端、IDE 扩展或自定义运行时覆盖。
+Copilot 原生 skill 仍使用上文安装器单独注册。

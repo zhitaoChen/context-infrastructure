@@ -303,3 +303,11 @@ Agent 在查看状态时提示用户，不自动上传、计费或安装 embeddi
 
 OpenCode 与外部 jobs 留在 `archive`，不执行。归档是保留源码，不承诺移动后可直接运行；
 恢复前重新检查路径、imports、认证和平台依赖。
+
+## Gemini 引用与兼容 runner
+
+`agent_history.py` 另支持显式授权的 `--source gemini`，读取本机
+`~/.gemini/tmp/*/chats/session-*.json` 用户文本。同 sessionId 多快照取最新版，
+引用仅存哈希，默认留待交互审阅；不扩大已授权范围。
+原 Copilot runner 增加跨 Daily/Weekly 的流水线锁与有界排队，防止补跑竞争；
+这不改变当前优先使用单一 Pi 会话维护、审阅归位后 commit/push 的约定。

@@ -18,7 +18,7 @@ else:
     import memory
 
 
-SOURCES = ("claude", "codex", "pi")
+SOURCES = ("claude", "codex", "pi", "gemini")
 MAX_TURNS = 5000
 SESSION_ID = re.compile(r"[\w-]{1,120}")
 GENERATED_CLAUDE_PREFIXES = (
@@ -48,6 +48,8 @@ def utc_time(value):
 
 
 def default_roots(source):
+    if source == "gemini":
+        return [Path(os.environ.get("GEMINI_CLI_HOME") or Path.home()) / ".gemini/tmp"]
     if source == "claude":
         return [Path.home() / ".claude" / "projects"]
     if source == "codex":
@@ -381,10 +383,44 @@ def pi_rows(roots, include_assistant=False):
                 yield row
 
 
+def gemini_rows(roots, include_assistant=False):
+    sessions = {}
+    for path in iter_jsonl(roots, "session-*.json"):
+        if path.parent.name != "chats":
+            continue
+        # Unlike JSONL, this file can be temporarily incomplete during a write.
+        # Fail rather than claim complete collection or consume a changed source.
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("Unsupported Gemini session format")
+        session_id = data.get("sessionId")
+        messages = data.get("messages")
+        if not isinstance(session_id, str) or not SESSION_ID.fullmatch(session_id) or not isinstance(messages, list):
+            raise ValueError("Unsupported Gemini session schema")
+        # Gemini can retain multiple snapshots under one sessionId. Reading all
+        # snapshots repeatedly supersedes the same ordinal back and forth.
+        updated = utc_time(data.get("lastUpdated"))
+        rank = (updated.timestamp() if updated else path.stat().st_mtime, str(path))
+        if session_id not in sessions or rank > sessions[session_id][0]:
+            sessions[session_id] = (rank, messages)
+    for session_id, (_, messages) in sorted(sessions.items()):
+        index = 0
+        for message in messages:
+            if not isinstance(message, dict) or message.get("type") != "user":
+                continue
+            ordinal, index = index, index + 1
+            text = extract_text(message.get("content"))
+            stamp = utc_time(message.get("timestamp"))
+            if text and stamp:
+                yield make_row("gemini", session_id, ordinal, stamp, text, "")
+
+
 def scan_rows(config, include_assistant=False):
     rows = []
-    readers = {"claude": claude_rows, "codex": codex_rows, "pi": pi_rows}
+    readers = {"claude": claude_rows, "codex": codex_rows, "pi": pi_rows, "gemini": gemini_rows}
     for source, roots in config["sources"].items():
+        if not any(Path(root).is_dir() for root in roots):
+            raise ValueError(f"Approved {source} history directories are unavailable")
         if source not in readers:
             raise ValueError("Unsupported agent history source")
         rows.extend(readers[source](roots, include_assistant=include_assistant))

@@ -1,6 +1,7 @@
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import hashlib
+import gc
 import json
 from pathlib import Path
 import sqlite3
@@ -37,6 +38,9 @@ class HistoryTests(unittest.TestCase):
         history.configure(self.store, self.source, ["*"], 30, confirmed=True)
 
     def tearDown(self):
+        # sqlite3 transaction contexts do not close handles; release fixture
+        # connections before removing their files on Windows/Python 3.14.
+        gc.collect()
         self.temp.cleanup()
 
     def turn(self, session="session-a", index=0, repository="fixture/project",
@@ -247,6 +251,7 @@ class HistoryTests(unittest.TestCase):
         self.turn()
         history.collect(self.store)
         key = self.refs()[0]["id"]
+        gc.collect()
         self.source.unlink()
         history.resolve(self.store, key, "dismissed", reason="sensitive", confirmed=True)
         repeated = history.resolve(self.store, key, "dismissed", reason="sensitive", confirmed=True)

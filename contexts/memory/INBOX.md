@@ -51,14 +51,16 @@ Pi runner 可通过 `.local/conversation_daily.json` 显式启用本机历史回
 
 ## 本地 Agent 历史引用与定时提炼
 
-可选择启用本地历史采集器，定时只读扫描获准的 Copilot、Claude Code 和 Codex
-历史，将来源、会话 ID、
+可选择启用本地历史采集器，定时只读扫描获准的 Copilot、Claude Code、Codex、
+Pi 和 Gemini CLI 历史，将来源、会话 ID、
 轮次、时间和内容摘要哈希写入独立队列。不复制原始会话、项目名、路径或代码到
 队列，不调用模型；引用不等于已接受的记忆。连接配置中的历史数据库路径仅保存在
 Git 忽略的 `.local\history.json` 和 `.local\agent_history.json`，不进入模型输入。
 
 Claude Code 读取 `~\.claude\projects\**\*.jsonl`，Codex 读取
 `~\.codex\sessions\**\rollout-*.jsonl` 和 `~\.codex\archived_sessions`。
+Pi 读取 `~\.pi\agent\sessions\**\*.jsonl`，Gemini CLI 读取
+`~\.gemini\tmp\*\chats\session-*.json`。只读取用户文本，不读取图片、推理或工具结果。
 不需要对应 CLI 正在运行。本地来源无法证明项目是否公开，因此默认进入
 `needs_review`，不自动发送给模型；交互审阅仍需逐条确认安全抽象。
 授权并启用 `tools\brain\observer.py configure --confirmed` 后，每日定时任务会从

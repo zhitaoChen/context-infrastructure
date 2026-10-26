@@ -109,6 +109,72 @@ class AgentHistoryTests(unittest.TestCase):
         self.assertEqual(result["superseded"], 1)
         self.assertEqual(result["queued"], 1)
 
+    def test_pi_and_gemini_are_reference_only_and_held_for_review(self):
+        pi = self.root / "pi"
+        gemini = self.root / "gemini/chats"
+        pi.mkdir()
+        gemini.mkdir(parents=True)
+        events = [
+            {"type": "session", "id": "pi-session", "version": 3, "cwd": "private"},
+            {"type": "message", "timestamp": stamp(), "message": {
+                "role": "system", "content": "SYSTEM_SENTINEL"}},
+            {"type": "message", "id": "user-node", "timestamp": stamp(), "message": {
+                "role": "user", "content": [{"type": "text", "text": "PI_PRIVATE_SENTINEL"},
+                                             {"type": "image", "data": "IMAGE_SENTINEL"}]}},
+            {"type": "message", "timestamp": stamp(), "message": {
+                "role": "toolResult", "content": "TOOL_SENTINEL"}},
+        ]
+        file = pi / "session.jsonl"
+        file.write_text("".join(json.dumps(e) + "\n" for e in events) + '{', encoding="utf-8")
+        (gemini / "session-fixture.json").write_text(json.dumps({
+            "sessionId": "gemini-session", "messages": [
+                {"type": "user", "timestamp": stamp(), "content": "GEMINI_PRIVATE_SENTINEL"},
+                {"type": "gemini", "timestamp": stamp(), "content": "ASSISTANT_SENTINEL"},
+            ]}), encoding="utf-8")
+        config = agent_history.load_config(self.store)
+        config["sources"] = {"pi": [str(pi)], "gemini": [str(gemini.parent)]}
+        memory.atomic_write(self.store.local / "agent_history.json", json.dumps(config))
+        self.assertEqual(agent_history.collect(self.store)["sources"], {"gemini": 1, "pi": 1})
+        self.assertEqual(agent_history.collect(self.store)["queued"], 0)
+        observer.configure(self.store, confirmed=True)
+        result = observer.run(self.store, lambda *args: self.fail("Protected source sent to model"))
+        self.assertEqual(result["held_for_review"], 2)
+        with self.store.connection() as db:
+            refs = [dict(row) for row in db.execute("SELECT * FROM history_queue")]
+        for ref in refs:
+            self.assertIsNotNone(history.get_turn(self.store, ref))
+        for path in self.store.local.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(b"PRIVATE_SENTINEL", path.read_bytes())
+                self.assertNotIn(b"TOOL_SENTINEL", path.read_bytes())
+        events[0]["parentSession"] = "original.jsonl"
+        file.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+        # Upstream retains branch nodes and deduplicates by stable node ID.
+        self.assertEqual(len(list(agent_history.pi_rows([str(pi)]))), 1)
+
+    def test_gemini_snapshots_use_latest_version_without_requeue_churn(self):
+        chats = self.root / "snapshots/chats"
+        chats.mkdir(parents=True)
+        old = {"sessionId": "shared-session", "lastUpdated": "2026-01-01T00:00:00Z",
+               "messages": [{"type": "user", "timestamp": stamp(), "content": "Old request"}]}
+        new = dict(old, lastUpdated="2026-02-01T00:00:00Z", messages=[
+            {"type": "user", "timestamp": stamp(), "content": "Updated request"}])
+        (chats / "session-old.json").write_text(json.dumps(old), encoding="utf-8")
+        (chats / "session-new.json").write_text(json.dumps(new), encoding="utf-8")
+        config = agent_history.load_config(self.store)
+        config["sources"] = {"gemini": [str(chats.parent)]}
+        memory.atomic_write(self.store.local / "agent_history.json", json.dumps(config))
+        rows = agent_history.scan_rows(config)
+        self.assertEqual([row["user_message"] for row in rows], ["Updated request"])
+        self.assertEqual(agent_history.collect(self.store)["queued"], 1)
+        self.assertEqual(agent_history.collect(self.store)["queued"], 0)
+        self.assertEqual(agent_history.collect(self.store)["superseded"], 0)
+
+    def test_missing_approved_root_fails_explicitly(self):
+        self.claude.rmdir()
+        with self.assertRaisesRegex(ValueError, "unavailable"):
+            agent_history.collect(self.store)
+
     def test_confirmation_and_missing_sources_are_rejected(self):
         with self.assertRaises(ValueError):
             agent_history.configure(self.store, ["claude"], 30, replace=True)

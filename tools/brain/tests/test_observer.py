@@ -1,6 +1,7 @@
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
 import json
+import gc
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -38,6 +39,8 @@ class ObserverTests(unittest.TestCase):
         observer.configure(self.store, confirmed=True)
 
     def tearDown(self):
+        # Release fixture SQLite handles before Windows temporary-file cleanup.
+        gc.collect()
         self.temp.cleanup()
 
     def turn(self, index=0, message="Always verify the real outputs. REQUEST_SENTINEL",
