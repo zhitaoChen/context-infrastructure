@@ -287,8 +287,8 @@ def pi_rows(roots, include_assistant=False):
             for line in stream:
                 if not line.strip():
                     continue
-                if len(line) > 2 * 1024 * 1024:
-                    raise ValueError("pi session entry exceeds the supported size limit")
+                if len(line) > 16 * 1024 * 1024:
+                    raise ValueError("pi session entry exceeds the absolute supported size limit")
                 try:
                     event = json.loads(line)
                 except json.JSONDecodeError as exc:
@@ -319,6 +319,9 @@ def pi_rows(roots, include_assistant=False):
                 if event.get("type") != "message":
                     continue
                 message = event.get("message")
+                if len(line) > 2 * 1024 * 1024 and (not isinstance(message, dict)
+                        or message.get("role") != "toolResult"):
+                    raise ValueError("pi non-tool session entry exceeds the supported size limit")
                 if not isinstance(message, dict) or message.get("role") != "user":
                     continue
                 entry = event.get("id")

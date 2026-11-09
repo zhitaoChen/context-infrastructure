@@ -170,6 +170,14 @@ class PiHistoryTests(unittest.TestCase):
                 list(agent_history.pi_rows([str(self.sessions)]))
             path.unlink()
 
+    def test_large_tool_image_does_not_block_user_history(self):
+        self.write([user(), {"type": "message", "id": "tool-image", "message": {
+            "role": "toolResult", "content": [{"type": "image", "data": "x" * (2 * 1024 * 1024)}]}}])
+        self.assertEqual(agent_history.collect(self.store)["queued"], 1)
+        self.write([user(content="x" * (2 * 1024 * 1024))])
+        with self.assertRaisesRegex(ValueError, "non-tool"):
+            agent_history.collect(self.store)
+
     def test_custom_pi_roots_respect_environment_and_config(self):
         with mock.patch.dict(os.environ, {"PI_CODING_AGENT_DIR": str(self.root / "agent"),
                                          "PI_CODING_AGENT_SESSION_DIR": str(self.sessions)}):
