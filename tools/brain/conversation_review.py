@@ -26,7 +26,7 @@ OPERATIONAL = re.compile(
     r"每次本定时触发|继续任务#|每半小时自检|检查并用中文主动报告个人PiXP|"
     r"继续用户授权的GenSERP部署评测|继续600Query|检查verified部署重试|继续完成用户授权的GenSERP闭环)"
 )
-TIMER = re.compile(r"timer|定时|自检|\d+\s*(?:分钟|小时|min)", re.I)
+TIMER = re.compile(r"timer|定时|自检|半小时|\d+\s*(?:分钟|小时|min)", re.I)
 STATE = re.compile(r"checkpoint|检查点|PID|进程|读取|先读", re.I)
 
 

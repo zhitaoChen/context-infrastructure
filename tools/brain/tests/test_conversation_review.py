@@ -42,6 +42,11 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(result['automated_excluded'], 1)
         self.assertEqual(result['pending_unique_real_units'], 1)
 
+    def test_half_hour_operational_marker_requires_all_features(self):
+        self.assertTrue(review.automated(row('1', '继续任务#47，先读checkpoint，半小时检查进程。')))
+        self.assertFalse(review.automated(row('2', '希望每半小时自检是否合适？先读一下我的计划。')))
+        self.assertFalse(review.automated(row('3', '你现在是每半个小时搞一次是吧')))
+
     def test_no_sixteen_item_daily_limit(self):
         self.rows = [row(str(i), question=f'question {i}') for i in range(1, 81)]
         self.assertEqual(review.prepare(self.store, 1, '2026-11-09')['pending_unique_real_units'], 80)
