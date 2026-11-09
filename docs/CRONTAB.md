@@ -5,6 +5,21 @@
 本机已改用单一持久会话任务，每天北京时间23:00触发；周日同一流程先日整理、再周综合，
 缺少到期周记录时补跑。执行规约见 `periodic_jobs/ai_heartbeat/prompts/pi_maintenance.md`。
 运行过程、修改与结果在承载任务的 Pi 会话可见，不再通过隐藏后台模型进程执行。
+每日目标是北京时间当天全部已落盘真实问答，不是抽样16条。先程序分流定时提示，
+真实问答按原始内容去重、保留首次代表；助手回复不同、独立会话证据和长文本分块不合并。
+分页只控制单次上下文，循环审阅和daily分类直到当天目标清单无未审内容。
+活跃记录延后复核、跨午夜固定目标日期，敏感待审或源变化须明确报告部分完成。
+
+会话内本地接口（不调用模型）：
+```powershell
+python tools/brain/conversation_review.py prepare --days 1 --date YYYY-MM-DD
+python tools/brain/conversation_review.py show --offset 0 --limit 20
+# 当前会话逐页审阅后，将 decisions JSON 经 stdin 传给 commit；反复 prepare 验收余量。
+python tools/brain/conversation_review.py commit
+# 已授权历史回查，范围不改变来源授权：
+python tools/brain/conversation_review.py prepare --days 21
+```
+`show`只供获准会话读取脱敏片段，不转贴到最终报告或公开日志；清单与事务状态保留本机。
 在 Pi 中使用 `/loop-list` 或 `cron_list` 查看，不在 Windows 任务列表里寻找会话任务。
 
 本机 `PersonalBrain-Pi-Daily`／`PersonalBrain-Pi-Weekly` 已停用而非删除，避免重复处理。
@@ -49,9 +64,9 @@ placeholder，不因一段敏感内容丢弃整条 query。长对话分块处理
 不提取模型推理、工具输出或图片；助手自称成功不是验证证据。
 局部规则脱敏不能保证识别任意自然语言里的所有私人信息，不能宣称数学上的零泄漏。
 
-每日最多 8 批、每批最多 16 个片段，积压保留到后续，重复版本不重复消费；
+仅下述已停用的旧后台执行器仍有最多8批、每批16片段的安全预算，不适用于当前会话维护；
 模型失败不消费该批，来源在推理期间变化则停止并重新采集。
-每日分类每轮最多 32 条候选，其余留到次日；模型调用最坏预算按安装器预留，
+旧后台每日分类每轮32条；当前会话须重复事务分页直到本轮候选清空，不因分页留到次日。旧后台超时预算按安装器预留，
 每日任务时限为 19 次单次超时加 30 分钟本地处理时间；周任务预留3次调用。
 本地输出校验拦下的候选保留 `needs_review`，不为清空积压放宽边界。
 摘要仅包含非敏感、可复用的方法；没有合格内容时不制造经验。
