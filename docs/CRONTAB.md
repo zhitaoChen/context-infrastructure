@@ -319,6 +319,13 @@ Agent 在查看状态时提示用户，不自动上传、计费或安装 embeddi
 OpenCode 与外部 jobs 留在 `archive`，不执行。归档是保留源码，不承诺移动后可直接运行；
 恢复前重新检查路径、imports、认证和平台依赖。
 
+## 上游旧 Reflector 的两段式变更
+
+上游旧OpenCode Reflector已改为默认只提议规则候选，人批准后才通过`--apply`合入。
+本fork对应代码仍在`periodic_jobs/ai_heartbeat/archive/opencode/reflector.py`，未启用；
+其候选文件和执行方式不是本机当前SQLite事务维护入口。同步源码不安装任务、不扩大历史
+来源，也不替代当前Pi规约与既有审阅发布授权。
+
 ## Gemini 引用与兼容 runner
 
 `agent_history.py` 另支持显式授权的 `--source gemini`，读取本机

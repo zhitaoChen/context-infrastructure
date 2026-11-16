@@ -14,6 +14,7 @@
 | 长任务、context 丢失、中断恢复、检查点 | [长任务恢复](./workflow_long_task_recovery.md) |
 | 可独立拆分的大任务、并行子 Agent | [并行工作流](./workflow_parallel_subagents.md) |
 | 后台任务停滞、失败诊断 | [Watchdog](./workflow_watchdog.md) |
+| 明确请求 Astra coordinator / PI 且实际模型匹配 | [条件协调工作流](./workflow_astra_coordinator.md)，仍以运行时授权为准 |
 | 延时执行、关闭 CLI 后仍需运行 | [调度边界](./delayed_execution.md) |
 | AI 编程的需求、成功标准、验证 | [编程方法论](./bestpractice_ai_programming_mindset.md) |
 | 调试失败、验证假设 | [调试诊断](./bestpractice_ai_debugging_diagnosis.md) |
@@ -35,6 +36,7 @@
 | arXiv 下载和格式转换 | [论文转换](./bestpractice_academic_paper_conversion.md) |
 | 最新政策/数字/事实时效性 | [时间敏感信息验证](./bestpractice_temporal_info_verification.md) |
 | Markdown 转 HTML | [HTML 转换](./bestpractice_markdown_html_conversion.md) |
+| Reddit 帖子、评论与归档证据 | [Reddit Reader](./reddit_reader.md)，注意归档时效和来源限制 |
 | 内部文档版式 | [内部视觉规范](./bestpractice_internal_visuals.md) |
 | 经验沉淀、知识迭代 | [知识飞轮](./workflow_knowledge_flywheel.md) |
 | 面试方法论（不自动存储候选人画像） | [面试框架](./bestpractice_interview_evaluation.md) |

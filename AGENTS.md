@@ -42,7 +42,10 @@
 
 ## Multi-Agent
 
-大型、可并行、调研重或需要独立交叉验证的任务，先读 `rules/skills/workflow_parallel_subagents.md`。单点任务不要为了并行而并行。
+调用 sub-agent 或独立审阅载体前，先读 `rules/skills/workflow_parallel_subagents.md`。
+工程实现默认主线程完成；独立 code/privacy/design review 可使用 fresh context，但先核对
+当前用户及运行时的委派授权，不因任务复杂或参考文件建议而自动启动。单点任务不要为了并行而并行。
+同批就绪的已授权任务使用运行时支持的统一编排；原生异步完成走通知，不另建轮询。
 
 ## Safety
 
