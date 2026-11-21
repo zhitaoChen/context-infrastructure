@@ -47,6 +47,18 @@ class ReviewTests(unittest.TestCase):
         self.assertFalse(review.automated(row('2', '希望每半小时自检是否合适？先读一下我的计划。')))
         self.assertFalse(review.automated(row('3', '你现在是每半个小时搞一次是吧')))
 
+    def test_verified_recurring_g4_g5_template_only(self):
+        prefix = '持续推进当前G4/G5任务并每5分钟自检，工作不等待tick。'
+        template = prefix + '更新唯一主文档three_treatments_six_changes.md，全部完成后取消此任务。'
+        self.assertTrue(review.automated(row('1', template)))
+        self.assertFalse(review.automated(row('2', prefix)))
+        self.assertFalse(review.automated(row('3', '请帮我设置这个定时任务：' + template)))
+        self.assertFalse(review.automated(row('4', 'G4/G5每5分钟自检怎么设置？')))
+        self.rows = [row('1', template), row('2', '请帮我设置这个定时任务：' + template)]
+        result = review.prepare(self.store, 1, '2026-11-09')
+        self.assertEqual(result['automated_excluded'], 1)
+        self.assertEqual(result['pending_unique_real_units'], 1)
+
     def test_no_sixteen_item_daily_limit(self):
         self.rows = [row(str(i), question=f'question {i}') for i in range(1, 81)]
         self.assertEqual(review.prepare(self.store, 1, '2026-11-09')['pending_unique_real_units'], 80)

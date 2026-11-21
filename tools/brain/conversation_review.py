@@ -32,6 +32,12 @@ STATE = re.compile(r"checkpoint|检查点|PID|进程|读取|先读", re.I)
 
 def automated(row):
     text = row['user_message'].strip()
+    # This exact recurring maintenance template was verified in local review.
+    # Mentions of G4/G5, timers, or a request to configure them alone are not enough.
+    if (text.startswith('持续推进当前G4/G5任务并每5分钟自检，工作不等待tick。')
+            and '更新唯一主文档three_treatments_six_changes.md' in text
+            and '全部完成后取消此任务' in text):
+        return True
     if text.startswith(observer.AUTOMATED) or text.lower().startswith(daily.agent_history.GENERATED_CLAUDE_PREFIXES):
         return True
     return bool(OPERATIONAL.search(text) and TIMER.search(text) and STATE.search(text))
