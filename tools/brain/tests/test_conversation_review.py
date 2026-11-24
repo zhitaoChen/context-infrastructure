@@ -59,6 +59,16 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(result['automated_excluded'], 1)
         self.assertEqual(result['pending_unique_real_units'], 1)
 
+    def test_recurring_fingerprint_matches_only_exact_prompt(self):
+        import hashlib
+        from unittest.mock import patch
+
+        prompt = 'Synthetic recurring fixture'
+        digest = hashlib.sha256(prompt.encode('utf-8')).hexdigest()
+        with patch.object(review, 'RECURRING_PROMPT_DIGESTS', {digest}):
+            self.assertTrue(review.automated(row('1', prompt)))
+            self.assertFalse(review.automated(row('2', prompt + ' with a new request')))
+
     def test_no_sixteen_item_daily_limit(self):
         self.rows = [row(str(i), question=f'question {i}') for i in range(1, 81)]
         self.assertEqual(review.prepare(self.store, 1, '2026-11-09')['pending_unique_real_units'], 80)

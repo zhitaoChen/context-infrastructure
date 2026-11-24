@@ -30,8 +30,16 @@ TIMER = re.compile(r"timer|定时|自检|半小时|\d+\s*(?:分钟|小时|min)",
 STATE = re.compile(r"checkpoint|检查点|PID|进程|读取|先读", re.I)
 
 
+# Fingerprints of confirmed recurring prompts, without storing private template text.
+RECURRING_PROMPT_DIGESTS = frozenset({
+    '6593d759331eb99dd6955540bd63587d982c068ee41f640dd259d0e2c232b95e',
+})
+
+
 def automated(row):
     text = row['user_message'].strip()
+    if hashlib.sha256(text.encode('utf-8')).hexdigest() in RECURRING_PROMPT_DIGESTS:
+        return True
     # This exact recurring maintenance template was verified in local review.
     # Mentions of G4/G5, timers, or a request to configure them alone are not enough.
     if (text.startswith('持续推进当前G4/G5任务并每5分钟自检，工作不等待tick。')
