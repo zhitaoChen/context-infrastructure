@@ -33,6 +33,9 @@ STATE = re.compile(r"checkpoint|检查点|PID|进程|读取|先读", re.I)
 # Fingerprints of confirmed recurring prompts, without storing private template text.
 RECURRING_PROMPT_DIGESTS = frozenset({
     '6593d759331eb99dd6955540bd63587d982c068ee41f640dd259d0e2c232b95e',
+    '6db62398bad16e321d3c40ca9c15b2382ab023d7cfff91605ddc6b013b6c7b61',
+    'ca2c02255025a76c10717b8f6b22f2449154ac7c65a7a54b28b0ae359237d6fb',
+    '2fdae540f7ab638a6fff9b351557bb88371b82b1c001d10393f07e184f774121',
 })
 
 
